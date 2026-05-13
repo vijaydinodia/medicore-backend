@@ -158,6 +158,14 @@ exports.forget = async (req, res) => {
       });
     }
 
+    // ensure OTP was verified
+    if (!exists.isOtpVerified) {
+      return res.status(400).json({
+        success: false,
+        message: "Please verify OTP before resetting password",
+      });
+    }
+
     // generate otp
     const otp = await otpBuilder(exists);
 
@@ -231,10 +239,10 @@ exports.verifyOtp = async (req, res) => {
 //reset password
 exports.resetPassword = async (req, res) => {
   try {
-    const { email, password, newPassword } = req.body;
+    const { email, newPassword } = req.body;
 
     // validation
-    if (!(email && password && newPassword)) {
+    if (!(email && newPassword)) {
       return res.status(400).json({
         success: false,
         message: "All fields are required",
@@ -251,23 +259,16 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
-    // compare old password
-    const match = await bcrypt.compare(password, exists.password);
-
-    if (!match) {
+    // ensure OTP was verified
+    if (!exists.isOtpVerified) {
       return res.status(400).json({
         success: false,
-        message: "Old password is incorrect",
+        message: "Please verify OTP before resetting password",
       });
     }
 
-    // check same password
-    if (password === newPassword) {
-      return res.status(400).json({
-        success: false,
-        message: "New password cannot be same as old password",
-      });
-    }
+    // OTP already verified in previous step (exists.isOtpVerified)
+    // Flow: verify OTP -> submit only newPassword
 
     // hash new password
     const newHashPassword = await bcrypt.hash(newPassword, saltRounds);
@@ -275,9 +276,13 @@ exports.resetPassword = async (req, res) => {
     // update password
     exists.password = newHashPassword;
 
+    // reset OTP verification flag after successful reset
+    exists.isOtpVerified = false;
+
     await exists.save();
 
     // response
+
     return res.status(200).json({
       success: true,
       message: "Password updated successfully",
@@ -338,7 +343,9 @@ exports.editProfile = async (req, res) => {
       }
     } else if (profileImage && typeof profileImage === "string") {
       if (profileImage.startsWith("data:image")) {
-        const matches = profileImage.match(/^data:(image\/[a-zA-Z]+);base64,(.+)$/);
+        const matches = profileImage.match(
+          /^data:(image\/[a-zA-Z]+);base64,(.+)$/,
+        );
         if (!matches) {
           return res.status(400).json({
             success: false,
