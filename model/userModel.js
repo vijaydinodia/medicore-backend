@@ -36,7 +36,7 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ["user", "admin", "superAdmin"],
+      enum: ["user", "admin", "superAdmin", "hospital"],
       default: "user",
     },
 
@@ -60,8 +60,31 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "SuperAdmin",
     },
-    otp: String,
-    otpExpire: Date,
+
+    hospitalId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Hospital",
+      default: null,
+    },
+
+    departmentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Department",
+      default: null,
+    },
+
+    otpExpire: {
+      type: Date,
+      default: null,
+    },
+
+    isOtpVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    
+
     isOtpVerified: {
       type: Boolean,
       default: false,
@@ -73,4 +96,4 @@ const userSchema = new mongoose.Schema(
   },
 );
 
-module.exports = mongoose.model("users", userSchema);
+module.exports = mongoose.model("user", userSchema);

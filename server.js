@@ -22,11 +22,17 @@ const userRoute = require("./routes/userRoute");
 const locationRoute = require("./routes/locationRoute");
 const hospitalRoute = require("./routes/hospitalRoute");
 const superAdminRoute = require("./routes/superAdminRoute");
+const departmentRoute = require("./routes/departmentRoute");
+const subDepartmentRoute = require("./routes/subDepartmentRoute");
+const doctorRoute = require("./routes/doctorRoute");
 
 app.use("/user", userRoute);
 app.use("/location", locationRoute);
 app.use("/hospital", hospitalRoute);
 app.use("/super-admin", superAdminRoute);
+app.use("/department", departmentRoute);
+app.use("/sub-department", subDepartmentRoute);
+app.use("/doctor", doctorRoute);
 
 const port = process.env.PORT || 3000;
 
