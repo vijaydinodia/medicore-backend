@@ -1,6 +1,17 @@
 const Doctor = require("../model/doctorModel");
+const Hospital = require("../model/hospitalModel");
+const Department = require("../model/departmentModel");
+const SubDepartment = require("../model/subDepartmentModel");
 
-// create doctor
+const bcrypt = require("bcrypt");
+
+const { v4: uuidv4 } = require("uuid");
+
+const mailSender = require("../utils/mailSender");
+
+const doctorMailTemplate = require("../templates/doctorMailTemplate");
+
+// CREATE DOCTOR
 exports.createDoctor = async (req, res) => {
   try {
     const {
@@ -30,7 +41,6 @@ exports.createDoctor = async (req, res) => {
       availableTime,
       emergencyAvailable,
       status,
-      isDeleted,
     } = req.body;
 
     // validation
@@ -53,7 +63,7 @@ exports.createDoctor = async (req, res) => {
       });
     }
 
-    // check existing
+    // check existing doctor
     const alreadyExists = await Doctor.findOne({
       $or: [
         { email: email.trim().toLowerCase() },
@@ -68,6 +78,21 @@ exports.createDoctor = async (req, res) => {
         message: "Doctor already exists",
       });
     }
+
+    // generate random password
+    const plainPassword = uuidv4().replace(/-/g, "").slice(0, 8);
+
+    // hash password
+    const hashedPassword = await bcrypt.hash(plainPassword, 10);
+
+    // get hospital
+    const hospital = await Hospital.findById(hospitalId);
+
+    // get department
+    const department = await Department.findById(departmentId);
+
+    // get sub department
+    const subDepartment = await SubDepartment.findById(subDepartmentId);
 
     // create doctor
     const newDoctor = await Doctor.create({
@@ -126,12 +151,43 @@ exports.createDoctor = async (req, res) => {
 
       status: status || "active",
 
-      isDeleted: isDeleted || false,
+      password: hashedPassword,
     });
+
+    // send mail
+    await mailSender(
+      email,
+      "Doctor Account Created Successfully",
+      doctorMailTemplate({
+        doctorName,
+
+        email,
+
+        password: plainPassword,
+
+        hospitalName: hospital?.hospitalName || "",
+
+        departmentName: department?.departmentName || "",
+
+        subDepartmentName: subDepartment?.subDepartmentName || "",
+
+        specialization,
+
+        qualification,
+
+        experience,
+
+        consultationFee,
+
+        startTime: availableTime?.startTime || "",
+
+        endTime: availableTime?.endTime || "",
+      }),
+    );
 
     return res.status(201).json({
       success: true,
-      message: "Doctor created successfully",
+      message: "Doctor created and mail sent successfully",
       data: newDoctor,
     });
   } catch (err) {
@@ -144,7 +200,6 @@ exports.createDoctor = async (req, res) => {
     });
   }
 };
-
 // get all
 exports.getAllDoctors = async (req, res) => {
   try {
@@ -303,7 +358,7 @@ exports.restoreDoctor = async (req, res) => {
   }
 };
 
-// hard delete 
+// hard delete
 exports.hardDeleteDoctor = async (req, res) => {
   try {
     const { id } = req.params;

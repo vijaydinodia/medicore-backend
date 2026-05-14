@@ -81,7 +81,7 @@ exports.getHospitals = async (req, res) => {
   }
 };
 
-// get all hospitals (including active/inactive except soft deleted)
+// get all hospitals
 exports.getAllHospitals = async (req, res) => {
   try {
     const hospitals = await hospital.find({ isDeleted: false }).sort({ createdAt: -1 });
