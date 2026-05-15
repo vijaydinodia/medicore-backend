@@ -11,8 +11,16 @@ const {
   restoreDoctor,
   hardDeleteDoctor,
 } = require("../controller/doctorController");
+const upload = require("../middleware/upload");
 
-router.post("/createDoctor", createDoctor);
+router.post(
+  "/createDoctor",
+  upload.fields([
+    { name: "profileImage", maxCount: 1 },
+    { name: "doctorFiles", maxCount: 8 },
+  ]),
+  createDoctor,
+);
 router.get("/getAllDoctors", getAllDoctors);
 router.get("/getSingleDoctor/:id", getSingleDoctor);
 router.patch("/updateDoctor/:id", updateDoctor);

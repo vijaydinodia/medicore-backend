@@ -1,4 +1,29 @@
 const hospital = require("../model/hospitalModel");
+const { uploadImage } = require("../utils/cloudnairy");
+
+const toBoolean = (value) => value === true || value === "true";
+const toNumber = (value) => (value === "" || value === undefined ? undefined : Number(value));
+
+const parseDocumentNames = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const mapUploads = (uploads, files, documentNames = []) =>
+  uploads.map((item, index) => ({
+    url: item.secure_url,
+    publicId: item.public_id,
+    name: files[index]?.originalname || item.original_filename || "",
+    documentName: documentNames[index]?.trim() || files[index]?.originalname || item.original_filename || "",
+    type: item.resource_type,
+  }));
 
 exports.addHospital = async (req, res) => {
   try {
@@ -26,8 +51,8 @@ exports.addHospital = async (req, res) => {
       ICUAvailable,
       bloodBankAvailable,
       pharmacyAvailable,
-      logo,
       description,
+      documentNames,
     } = req.body;
 
     // validation
@@ -64,6 +89,33 @@ exports.addHospital = async (req, res) => {
       });
     }
 
+    const parsedDocumentNames = parseDocumentNames(documentNames);
+    const documentFiles = req.files?.hospitalFiles || [];
+
+    if (!documentFiles.length) {
+      return res.status(400).json({
+        success: false,
+        message: "At least one required document must be uploaded",
+      });
+    }
+
+    if (parsedDocumentNames.length !== documentFiles.length || parsedDocumentNames.some((name) => !name?.trim())) {
+      return res.status(400).json({
+        success: false,
+        message: "Each uploaded document needs a document name",
+      });
+    }
+
+    const logoUpload = req.files?.logo?.[0]
+      ? await uploadImage(req.files.logo[0], "medicore/hospitals/logos")
+      : [];
+    const imageUploads = req.files?.hospitalImages?.length
+      ? await uploadImage(req.files.hospitalImages, "medicore/hospitals/images")
+      : [];
+    const fileUploads = documentFiles.length
+      ? await uploadImage(documentFiles, "medicore/hospitals/files")
+      : [];
+
     // create hospital
     const newHospital = await hospital.create({
       hospitalName: hospitalName.trim(),
@@ -92,25 +144,29 @@ exports.addHospital = async (req, res) => {
 
       pincode: pincode.trim(),
 
-      totalBeds: totalBeds || 0,
+      totalBeds: toNumber(totalBeds) || 0,
 
-      availableBeds: availableBeds || 0,
+      availableBeds: toNumber(availableBeds) || 0,
 
-      totalDoctors: totalDoctors || 0,
+      totalDoctors: toNumber(totalDoctors) || 0,
 
-      totalStaff: totalStaff || 0,
+      totalStaff: toNumber(totalStaff) || 0,
 
-      emergencyAvailable: emergencyAvailable || false,
+      emergencyAvailable: toBoolean(emergencyAvailable),
 
-      ambulanceAvailable: ambulanceAvailable || false,
+      ambulanceAvailable: toBoolean(ambulanceAvailable),
 
-      ICUAvailable: ICUAvailable || false,
+      ICUAvailable: toBoolean(ICUAvailable),
 
-      bloodBankAvailable: bloodBankAvailable || false,
+      bloodBankAvailable: toBoolean(bloodBankAvailable),
 
-      pharmacyAvailable: pharmacyAvailable || false,
+      pharmacyAvailable: toBoolean(pharmacyAvailable),
 
-      logo: logo || "",
+      logo: logoUpload[0]?.secure_url || "",
+
+      images: mapUploads(imageUploads, req.files?.hospitalImages || []),
+
+      files: mapUploads(fileUploads, documentFiles, parsedDocumentNames),
 
       description: description ? description.trim() : "",
     });

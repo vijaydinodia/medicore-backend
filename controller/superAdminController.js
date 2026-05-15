@@ -11,15 +11,19 @@ const generateRandomPassword = () => {
   return uuidv4().replace(/-/g, "").slice(0, 12);
 };
 
+const isValidHospitalId = (id) => {
+  return id && require("mongoose").Types.ObjectId.isValid(id);
+};
+
 //reject hospital
 exports.rejectHospital = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!id) {
+    if (!isValidHospitalId(id)) {
       return res.status(400).json({
         success: false,
-        message: "Hospital id is required",
+        message: "Valid hospital id is required",
       });
     }
 
@@ -32,10 +36,18 @@ exports.rejectHospital = async (req, res) => {
       });
     }
 
-    if (existingHospital.status === "rejected") {
+    if (existingHospital.isDeleted) {
       return res.status(400).json({
         success: false,
+        message: "Deleted hospital cannot be rejected",
+      });
+    }
+
+    if (existingHospital.status === "rejected") {
+      return res.status(200).json({
+        success: true,
         message: "Hospital already rejected",
+        data: existingHospital,
       });
     }
 
@@ -158,10 +170,10 @@ exports.softDeleteHospital = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!id) {
+    if (!isValidHospitalId(id)) {
       return res.status(400).json({
         success: false,
-        message: "Hospital id is required",
+        message: "Valid hospital id is required",
       });
     }
 
@@ -196,10 +208,10 @@ exports.restoreHospital = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!id) {
+    if (!isValidHospitalId(id)) {
       return res.status(400).json({
         success: false,
-        message: "Hospital id is required",
+        message: "Valid hospital id is required",
       });
     }
 
@@ -235,10 +247,10 @@ exports.approveHospital = async (req, res) => {
     const { id } = req.params;
 
     // validation
-    if (!id) {
+    if (!isValidHospitalId(id)) {
       return res.status(400).json({
         success: false,
-        message: "Hospital id is required",
+        message: "Valid hospital id is required",
       });
     }
 
@@ -251,17 +263,38 @@ exports.approveHospital = async (req, res) => {
       });
     }
 
-    if (existingHospital.status === "approved") {
+    if (existingHospital.isDeleted) {
       return res.status(400).json({
         success: false,
+        message: "Deleted hospital cannot be approved",
+      });
+    }
+
+    if (existingHospital.status === "approved") {
+      return res.status(200).json({
+        success: true,
         message: "Hospital already approved",
+        data: {
+          hospital: existingHospital,
+        },
       });
     }
 
     const hospitalPassword = generateRandomPassword();
     const passwordHash = await bcrypt.hash(hospitalPassword, saltRounds);
 
-    let approvedUser = await User.findOne({ email: existingHospital.email });
+    const hospitalEmail = existingHospital.email.toLowerCase().trim();
+    const hospitalPhone = existingHospital.phone.trim();
+    let approvedUser = await User.findOne({
+      $or: [{ email: hospitalEmail }, { phone: hospitalPhone }],
+    });
+
+    if (approvedUser && approvedUser.email !== hospitalEmail) {
+      return res.status(400).json({
+        success: false,
+        message: "Hospital phone is already used by another user",
+      });
+    }
 
     if (approvedUser && approvedUser.role === "superAdmin") {
       return res.status(400).json({
@@ -274,25 +307,27 @@ exports.approveHospital = async (req, res) => {
       approvedUser.password = passwordHash;
       approvedUser.role = "admin";
       approvedUser.hospitalId = existingHospital._id;
-      if (req.user && req.user.id) {
-        approvedUser.createdBy = req.user.id;
+      if (req.user?._id) {
+        approvedUser.createdBy = req.user._id;
       }
       await approvedUser.save();
     } else {
       approvedUser = await User.create({
         name: existingHospital.hospitalName.trim(),
-        email: existingHospital.email.toLowerCase().trim(),
-        phone: existingHospital.phone.trim(),
+        email: hospitalEmail,
+        phone: hospitalPhone,
         age: 18,
         gender: "other",
         role: "admin",
         password: passwordHash,
         hospitalId: existingHospital._id,
-        createdBy: req.user?.id,
+        createdBy: req.user?._id,
       });
     }
 
     existingHospital.status = "approved";
+    existingHospital.isActive = true;
+    existingHospital.isDeleted = false;
     await existingHospital.save();
 
     try {
@@ -316,6 +351,46 @@ exports.approveHospital = async (req, res) => {
         hospital: existingHospital,
         user: approvedUser,
       },
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: err.message,
+    });
+  }
+};
+
+// toggle hospital active/inactive
+exports.toggleActiveHospital = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!isValidHospitalId(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid hospital id is required",
+      });
+    }
+
+    const existingHospital = await hospital.findById(id);
+
+    if (!existingHospital || existingHospital.isDeleted) {
+      return res.status(404).json({
+        success: false,
+        message: "Hospital not found",
+      });
+    }
+
+    existingHospital.isActive = !existingHospital.isActive;
+    await existingHospital.save();
+
+    return res.status(200).json({
+      success: true,
+      message: existingHospital.isActive
+        ? "Hospital activated successfully"
+        : "Hospital deactivated successfully",
+      data: existingHospital,
     });
   } catch (err) {
     return res.status(500).json({

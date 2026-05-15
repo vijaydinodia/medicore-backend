@@ -126,6 +126,15 @@ const doctorSchema = new mongoose.Schema(
       default: "",
     },
 
+    files: [
+      {
+        url: String,
+        publicId: String,
+        name: String,
+        type: String,
+      },
+    ],
+
     availableDays: [
       {
         type: String,

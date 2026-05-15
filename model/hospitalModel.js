@@ -135,6 +135,24 @@ const hospitalSchema = new mongoose.Schema(
       type: String,
     },
 
+    images: [
+      {
+        url: String,
+        publicId: String,
+        name: String,
+      },
+    ],
+
+    files: [
+      {
+        url: String,
+        publicId: String,
+        name: String,
+        documentName: String,
+        type: String,
+      },
+    ],
+
     description: {
       type: String,
       trim: true,

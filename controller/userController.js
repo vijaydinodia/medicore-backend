@@ -1,4 +1,5 @@
 const User = require("../model/userModel");
+const Doctor = require("../model/doctorModel");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const moment = require("moment");
@@ -24,8 +25,9 @@ exports.signup = async (req, res) => {
     }
 
     // check existing user
+    const normalizedEmail = email.trim().toLowerCase();
     const existingUser = await User.findOne({
-      $or: [{ email }, { phone }],
+      $or: [{ email: normalizedEmail }, { phone: phone.trim() }],
     });
 
     if (existingUser) {
@@ -41,17 +43,17 @@ exports.signup = async (req, res) => {
     // create user
     const newUser = await User.create({
       name: name.trim(),
-      email: email.trim().toLowerCase(),
+      email: normalizedEmail,
       phone: phone.trim(),
       age,
       gender,
       password: hashPassword,
-      role,
+      role: role || "user",
     });
 
     // send mail
     await mailSender(
-      email,
+      normalizedEmail,
       "Account Created Successfully",
       signupTemplate(name, email, password, newUser.role),
     );
@@ -83,48 +85,71 @@ exports.login = async (req, res) => {
       });
     }
 
-    //check user exists or not
+    const normalizedEmail = email.trim().toLowerCase();
+    const exists = await User.findOne({ email: normalizedEmail });
 
-    const exists = await User.findOne({ email });
+    if (exists) {
+      const match = await bcrypt.compare(password, exists.password);
 
-    if (!exists) {
-      return res.status(400).json({
-        success: false,
-        message: "User not exists",
+      if (!match) {
+        return res.status(400).json({
+          success: false,
+          message: "Password is wrong",
+        });
+      }
+
+      let doctorProfile = null;
+      if (exists.role === "doctor") {
+        doctorProfile = exists.doctorId
+          ? await Doctor.findById(exists.doctorId)
+          : await Doctor.findOne({ email: exists.email });
+      }
+
+      const token = jwt.sign(
+        {
+          _id: exists._id,
+          email: exists.email,
+          role: exists.role,
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: "1d" },
+      );
+
+      return res.status(200).json({
+        message: "login successful",
+        role: exists.role,
+        token,
+        user: {
+          _id: exists._id,
+          name: doctorProfile?.doctorName || exists.name,
+          doctorName: doctorProfile?.doctorName,
+          email: exists.email,
+          phone: exists.phone,
+          age: exists.age,
+          gender: exists.gender,
+          profileImage: doctorProfile?.profileImage || exists.profileImage,
+          role: exists.role,
+          status: doctorProfile?.status || exists.status,
+          hospitalId: exists.hospitalId,
+          departmentId: doctorProfile?.departmentId || exists.departmentId,
+          doctorId: doctorProfile?._id || exists.doctorId,
+          specialization: doctorProfile?.specialization,
+        },
       });
     }
 
-    const match = await bcrypt.compare(password, exists.password);
+    const doctor = await Doctor.findOne({ email: normalizedEmail });
 
-    if (!match) {
+    if (!doctor) {
       return res.status(400).json({
         success: false,
-        message: "Password is wrong",
+        message: "User does not exist",
       });
     }
 
-    //create token
-    const token = jwt.sign(
-      {
-        _id: exists._id,
-        email: exists.email,
-        role: exists.role,
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "1d" },
-    );
-
-    return res.status(200).json({
-      message: "login successful",
-      role: exists.role,
-      token,
-      user: {
-        _id: exists._id,
-        name: exists.name,
-        email: exists.email,
-        role: exists.role,
-        status: exists.status,
-      },
+    return res.status(400).json({
+      success: false,
+      message: "Doctor login account is missing. Please ask the hospital admin to recreate this doctor account.",
     });
   } catch (err) {
     return res.status(500).json({
@@ -134,7 +159,6 @@ exports.login = async (req, res) => {
     });
   }
 };
-
 //forget
 exports.forget = async (req, res) => {
   try {
@@ -149,7 +173,8 @@ exports.forget = async (req, res) => {
     }
 
     // check user
-    const exists = await User.findOne({ email });
+    const normalizedEmail = email.trim().toLowerCase();
+    const exists = await User.findOne({ email: normalizedEmail });
 
     if (!exists) {
       return res.status(400).json({
@@ -158,20 +183,13 @@ exports.forget = async (req, res) => {
       });
     }
 
-    // ensure OTP was verified
-    if (!exists.isOtpVerified) {
-      return res.status(400).json({
-        success: false,
-        message: "Please verify OTP before resetting password",
-      });
-    }
 
     // generate otp
     const otp = await otpBuilder(exists);
 
     // send email
     await mailSender(
-      email,
+      normalizedEmail,
       "Password Reset OTP",
       forgotPasswordTemplate(exists.name, otp),
     );
@@ -202,7 +220,8 @@ exports.verifyOtp = async (req, res) => {
       });
     }
 
-    const exists = await User.findOne({ email });
+    const normalizedEmail = email.trim().toLowerCase();
+    const exists = await User.findOne({ email: normalizedEmail });
 
     if (!exists || !exists.otp) {
       return res.status(400).json({
@@ -250,7 +269,8 @@ exports.resetPassword = async (req, res) => {
     }
 
     // check user
-    const exists = await User.findOne({ email });
+    const normalizedEmail = email.trim().toLowerCase();
+    const exists = await User.findOne({ email: normalizedEmail });
 
     if (!exists) {
       return res.status(400).json({
@@ -259,6 +279,7 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
+
     // ensure OTP was verified
     if (!exists.isOtpVerified) {
       return res.status(400).json({
@@ -266,7 +287,6 @@ exports.resetPassword = async (req, res) => {
         message: "Please verify OTP before resetting password",
       });
     }
-
     // OTP already verified in previous step (exists.isOtpVerified)
     // Flow: verify OTP -> submit only newPassword
 
@@ -296,16 +316,169 @@ exports.resetPassword = async (req, res) => {
   }
 };
 
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user._id || req.user.id;
+
+    if (!(currentPassword && newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password and new password are required",
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters",
+      });
+    }
+
+    const account = await User.findById(userId);
+
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        message: "Account not found",
+      });
+    }
+
+    if (!account.password) {
+      return res.status(400).json({
+        success: false,
+        message: "Password is not set for this account",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, account.password);
+
+    if (!isMatch) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password is incorrect",
+      });
+    }
+
+    account.password = await bcrypt.hash(newPassword, saltRounds);
+    await account.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Password updated successfully",
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: err.message,
+    });
+  }
+};
+
 //edit profile
 
 exports.editProfile = async (req, res) => {
   try {
-    const { name, email, phone, age, gender, profileImage } = req.body;
+    const { name, age, gender, profileImage } = req.body;
 
     const userId = req.user._id || req.user.id;
 
+    if (req.user.role === "doctor") {
+      if (!(name && gender)) {
+        return res.status(400).json({
+          success: false,
+          message: "Name and gender are required",
+        });
+      }
+
+      const existingUser = await User.findById(userId);
+
+      if (!existingUser) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      const existingDoctor = existingUser.doctorId
+        ? await Doctor.findById(existingUser.doctorId)
+        : await Doctor.findOne({ email: existingUser.email });
+
+      if (!existingDoctor) {
+        return res.status(404).json({
+          success: false,
+          message: "Doctor not found",
+        });
+      }
+
+      let profileImageUrl = existingDoctor.profileImage || "";
+
+      if (req.file) {
+        const uploaded = await uploadImage(req.file, "medicore/profiles");
+        if (uploaded.length) {
+          profileImageUrl = uploaded[0].secure_url || profileImageUrl;
+        }
+      } else if (profileImage && typeof profileImage === "string") {
+        if (profileImage.startsWith("data:image")) {
+          const matches = profileImage.match(
+            /^data:(image\/[a-zA-Z]+);base64,(.+)$/,
+          );
+          if (!matches) {
+            return res.status(400).json({
+              success: false,
+              message: "Invalid profile image format",
+            });
+          }
+
+          const imageBuffer = Buffer.from(matches[2], "base64");
+          const uploaded = await uploadImage({ buffer: imageBuffer });
+          if (uploaded.length) {
+            profileImageUrl = uploaded[0].secure_url || profileImageUrl;
+          }
+        } else if (profileImage.startsWith("http")) {
+          profileImageUrl = profileImage;
+        }
+      }
+
+      const updatedDoctor = await Doctor.findByIdAndUpdate(
+        existingDoctor._id,
+        {
+          doctorName: name.trim(),
+          gender,
+          profileImage: profileImageUrl,
+        },
+        { new: true },
+      ).select("-password");
+
+      const updatedUser = await User.findByIdAndUpdate(
+        userId,
+        {
+          name: name.trim(),
+          gender,
+          profileImage: profileImageUrl,
+          doctorId: existingDoctor._id,
+          hospitalId: updatedDoctor.hospitalId,
+          departmentId: updatedDoctor.departmentId,
+        },
+        { new: true },
+      ).select("-password");
+
+      return res.status(200).json({
+        success: true,
+        message: "Profile updated successfully",
+        data: {
+          ...updatedUser.toObject(),
+          doctorName: updatedDoctor.doctorName,
+          status: updatedDoctor.status,
+          specialization: updatedDoctor.specialization,
+          doctorId: updatedDoctor._id,
+        },
+      });
+    }
+
     // validation
-    if (!(name && email && phone && age && gender)) {
+    if (!(name && age && gender)) {
       return res.status(400).json({
         success: false,
         message: "All fields are required",
@@ -322,22 +495,10 @@ exports.editProfile = async (req, res) => {
       });
     }
 
-    const duplicate = await User.findOne({
-      $or: [{ email: email.trim().toLowerCase() }, { phone: phone.trim() }],
-      _id: { $ne: userId },
-    });
-
-    if (duplicate) {
-      return res.status(400).json({
-        success: false,
-        message: "Email or phone already in use by another account",
-      });
-    }
-
     let profileImageUrl = exists.profileImage || "";
 
-    if (req.files?.profileImage) {
-      const uploaded = await uploadImage(req.files.profileImage);
+    if (req.file) {
+      const uploaded = await uploadImage(req.file, "medicore/profiles");
       if (uploaded.length) {
         profileImageUrl = uploaded[0].secure_url || profileImageUrl;
       }
@@ -367,8 +528,6 @@ exports.editProfile = async (req, res) => {
       userId,
       {
         name: name.trim(),
-        email: email.trim().toLowerCase(),
-        phone: phone.trim(),
         age,
         gender,
         profileImage: profileImageUrl,
@@ -391,3 +550,6 @@ exports.editProfile = async (req, res) => {
     });
   }
 };
+
+
+

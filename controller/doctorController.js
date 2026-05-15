@@ -1,4 +1,5 @@
 const Doctor = require("../model/doctorModel");
+const User = require("../model/userModel");
 const Hospital = require("../model/hospitalModel");
 const Department = require("../model/departmentModel");
 const SubDepartment = require("../model/subDepartmentModel");
@@ -10,8 +11,29 @@ const { v4: uuidv4 } = require("uuid");
 const mailSender = require("../utils/mailSender");
 
 const doctorMailTemplate = require("../templates/doctorMailTemplate");
+const { uploadImage } = require("../utils/cloudnairy");
 
-// CREATE DOCTOR
+const toBoolean = (value) => value === true || value === "true";
+const toNumber = (value) => (value === "" || value === undefined ? 0 : Number(value));
+
+const parseJson = (value, fallback) => {
+  if (typeof value !== "string") return value || fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
+const mapUploads = (uploads, files) =>
+  uploads.map((item, index) => ({
+    url: item.secure_url,
+    publicId: item.public_id,
+    name: files[index]?.originalname || item.original_filename || "",
+    type: item.resource_type,
+  }));
+
+// create doctor
 exports.createDoctor = async (req, res) => {
   try {
     const {
@@ -36,7 +58,6 @@ exports.createDoctor = async (req, res) => {
       districtId,
       cityId,
       pincode,
-      profileImage,
       availableDays,
       availableTime,
       emergencyAvailable,
@@ -63,19 +84,24 @@ exports.createDoctor = async (req, res) => {
       });
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     // check existing doctor
     const alreadyExists = await Doctor.findOne({
       $or: [
-        { email: email.trim().toLowerCase() },
+        { email: normalizedEmail },
         { doctorCode: doctorCode.trim() },
         { licenseNumber: licenseNumber.trim() },
       ],
     });
+    const existingUser = await User.findOne({
+      $or: [{ email: normalizedEmail }, { phone: phone.trim() }],
+    });
 
-    if (alreadyExists) {
+    if (alreadyExists || existingUser) {
       return res.status(400).json({
         success: false,
-        message: "Doctor already exists",
+        message: "Doctor account already exists",
       });
     }
 
@@ -94,6 +120,17 @@ exports.createDoctor = async (req, res) => {
     // get sub department
     const subDepartment = await SubDepartment.findById(subDepartmentId);
 
+    const profileUpload = req.files?.profileImage?.[0]
+      ? await uploadImage(req.files.profileImage[0], "medicore/doctors/profile")
+      : [];
+    const fileUploads = req.files?.doctorFiles?.length
+      ? await uploadImage(req.files.doctorFiles, "medicore/doctors/files")
+      : [];
+    const parsedAvailableTime = parseJson(availableTime, {
+      startTime: "",
+      endTime: "",
+    });
+
     // create doctor
     const newDoctor = await Doctor.create({
       hospitalId,
@@ -106,13 +143,13 @@ exports.createDoctor = async (req, res) => {
 
       doctorCode: doctorCode.trim(),
 
-      email: email.trim().toLowerCase(),
+      email: normalizedEmail,
 
       phone: phone.trim(),
 
       alternatePhone: alternatePhone || "",
 
-      gender: gender || "",
+      gender: gender || undefined,
 
       dateOfBirth: dateOfBirth || null,
 
@@ -120,9 +157,9 @@ exports.createDoctor = async (req, res) => {
 
       qualification: qualification.trim(),
 
-      experience: experience || 0,
+      experience: toNumber(experience),
 
-      consultationFee: consultationFee || 0,
+      consultationFee: toNumber(consultationFee),
 
       licenseNumber: licenseNumber.trim(),
 
@@ -138,30 +175,44 @@ exports.createDoctor = async (req, res) => {
 
       pincode: pincode || "",
 
-      profileImage: profileImage || "",
+      profileImage: profileUpload[0]?.secure_url || "",
 
-      availableDays: availableDays || [],
+      files: mapUploads(fileUploads, req.files?.doctorFiles || []),
 
-      availableTime: availableTime || {
+      availableDays: parseJson(availableDays, []),
+
+      availableTime: parsedAvailableTime || {
         startTime: "",
         endTime: "",
       },
 
-      emergencyAvailable: emergencyAvailable || false,
+      emergencyAvailable: toBoolean(emergencyAvailable),
 
       status: status || "active",
+    });
 
+    const newUser = await User.create({
+      name: doctorName.trim(),
+      email: normalizedEmail,
+      phone: phone.trim(),
+      age: 18,
+      gender: gender || "other",
+      role: "doctor",
+      hospitalId,
+      departmentId,
+      doctorId: newDoctor._id,
+      profileImage: newDoctor.profileImage,
       password: hashedPassword,
     });
 
     // send mail
     await mailSender(
-      email,
+      normalizedEmail,
       "Doctor Account Created Successfully",
       doctorMailTemplate({
         doctorName,
 
-        email,
+        email: normalizedEmail,
 
         password: plainPassword,
 
@@ -179,16 +230,19 @@ exports.createDoctor = async (req, res) => {
 
         consultationFee,
 
-        startTime: availableTime?.startTime || "",
+        startTime: parsedAvailableTime?.startTime || "",
 
-        endTime: availableTime?.endTime || "",
+        endTime: parsedAvailableTime?.endTime || "",
       }),
     );
 
     return res.status(201).json({
       success: true,
       message: "Doctor created and mail sent successfully",
-      data: newDoctor,
+      data: {
+        doctor: newDoctor,
+        user: newUser,
+      },
     });
   } catch (err) {
     console.log(err);

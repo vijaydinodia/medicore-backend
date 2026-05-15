@@ -36,13 +36,26 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ["user", "admin", "superAdmin", "hospital"],
+      enum: ["user", "admin", "superAdmin", "hospital", "doctor"],
       default: "user",
     },
 
     hospitalId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Hospital",
+      default: null,
+    },
+
+    departmentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Department",
+      default: null,
+    },
+
+    doctorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Doctor",
+      default: null,
     },
 
     profileImage: {
@@ -61,15 +74,8 @@ const userSchema = new mongoose.Schema(
       ref: "SuperAdmin",
     },
 
-    hospitalId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Hospital",
-      default: null,
-    },
-
-    departmentId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Department",
+    otp: {
+      type: String,
       default: null,
     },
 
@@ -77,13 +83,6 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-
-    isOtpVerified: {
-      type: Boolean,
-      default: false,
-    },
-
-    
 
     isOtpVerified: {
       type: Boolean,
