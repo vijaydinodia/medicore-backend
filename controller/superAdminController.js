@@ -15,6 +15,8 @@ const isValidHospitalId = (id) => {
   return id && require("mongoose").Types.ObjectId.isValid(id);
 };
 
+const withHospitalImages = (query) => query.populate("images").populate("files");
+
 //reject hospital
 exports.rejectHospital = async (req, res) => {
   try {
@@ -78,7 +80,7 @@ exports.getHospitals = async (req, res) => {
       filter.status = status;
     }
 
-    const hospitals = await hospital.find(filter).sort({ createdAt: -1 });
+    const hospitals = await withHospitalImages(hospital.find(filter)).sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,
@@ -96,7 +98,7 @@ exports.getHospitals = async (req, res) => {
 // get all hospitals
 exports.getAllHospitals = async (req, res) => {
   try {
-    const hospitals = await hospital.find({ isDeleted: false }).sort({ createdAt: -1 });
+    const hospitals = await withHospitalImages(hospital.find({ isDeleted: false })).sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,
@@ -114,7 +116,7 @@ exports.getAllHospitals = async (req, res) => {
 // get active hospitals
 exports.getActiveHospitals = async (req, res) => {
   try {
-    const hospitals = await hospital.find({ isDeleted: false, isActive: true }).sort({ createdAt: -1 });
+    const hospitals = await withHospitalImages(hospital.find({ isDeleted: false, isActive: true })).sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,
@@ -132,7 +134,7 @@ exports.getActiveHospitals = async (req, res) => {
 // get inactive hospitals
 exports.getInactiveHospitals = async (req, res) => {
   try {
-    const hospitals = await hospital.find({ isDeleted: false, isActive: false }).sort({ createdAt: -1 });
+    const hospitals = await withHospitalImages(hospital.find({ isDeleted: false, isActive: false })).sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,
@@ -150,7 +152,7 @@ exports.getInactiveHospitals = async (req, res) => {
 // get deleted hospitals
 exports.getDeletedHospitals = async (req, res) => {
   try {
-    const hospitals = await hospital.find({ isDeleted: true }).sort({ createdAt: -1 });
+    const hospitals = await withHospitalImages(hospital.find({ isDeleted: true })).sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,

@@ -1,4 +1,5 @@
 const Doctor = require("../model/doctorModel");
+const DoctorImg = require("../model/doctorImgModel");
 const User = require("../model/userModel");
 const Hospital = require("../model/hospitalModel");
 const Department = require("../model/departmentModel");
@@ -32,6 +33,18 @@ const mapUploads = (uploads, files) =>
     name: files[index]?.originalname || item.original_filename || "",
     type: item.resource_type,
   }));
+
+const ensureUploaded = (uploads, files, label) => {
+  if (files.length && uploads.length !== files.length) {
+    throw new Error(`${label} upload failed`);
+  }
+};
+
+const duplicateFields = [
+  { key: "email", label: "Email" },
+  { key: "doctorCode", label: "Doctor code" },
+  { key: "licenseNumber", label: "License number" },
+];
 
 // create doctor
 exports.createDoctor = async (req, res) => {
@@ -85,23 +98,42 @@ exports.createDoctor = async (req, res) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
+    const normalizedPhone = phone.trim();
+    const normalizedDoctorCode = doctorCode.trim();
+    const normalizedLicenseNumber = licenseNumber.trim();
 
     // check existing doctor
     const alreadyExists = await Doctor.findOne({
       $or: [
         { email: normalizedEmail },
-        { doctorCode: doctorCode.trim() },
-        { licenseNumber: licenseNumber.trim() },
+        { doctorCode: normalizedDoctorCode },
+        { licenseNumber: normalizedLicenseNumber },
       ],
     });
     const existingUser = await User.findOne({
-      $or: [{ email: normalizedEmail }, { phone: phone.trim() }],
+      $or: [{ email: normalizedEmail }, { phone: normalizedPhone }],
     });
 
     if (alreadyExists || existingUser) {
+      const duplicate = alreadyExists
+        ? duplicateFields.find((field) => {
+            const incoming = {
+              email: normalizedEmail,
+              doctorCode: normalizedDoctorCode,
+              licenseNumber: normalizedLicenseNumber,
+            }[field.key];
+
+            return alreadyExists[field.key] === incoming;
+          })
+        : null;
+
       return res.status(400).json({
         success: false,
-        message: "Doctor account already exists",
+        message: duplicate
+          ? `${duplicate.label} already exists`
+          : existingUser?.email === normalizedEmail
+          ? "Email already exists"
+          : "Phone already exists",
       });
     }
 
@@ -118,14 +150,31 @@ exports.createDoctor = async (req, res) => {
     const department = await Department.findById(departmentId);
 
     // get sub department
-    const subDepartment = await SubDepartment.findById(subDepartmentId);
+    const subDepartment = subDepartmentId
+      ? await SubDepartment.findById(subDepartmentId)
+      : null;
+
+    if (!hospital || !department) {
+      return res.status(400).json({
+        success: false,
+        message: !hospital ? "Hospital not found" : "Department not found",
+      });
+    }
 
     const profileUpload = req.files?.profileImage?.[0]
       ? await uploadImage(req.files.profileImage[0], "medicore/doctors/profile")
       : [];
+    const imageUploads = req.files?.doctorImages?.length
+      ? await uploadImage(req.files.doctorImages, "medicore/doctors/images")
+      : [];
     const fileUploads = req.files?.doctorFiles?.length
       ? await uploadImage(req.files.doctorFiles, "medicore/doctors/files")
       : [];
+
+    ensureUploaded(profileUpload, req.files?.profileImage || [], "Profile photo");
+    ensureUploaded(imageUploads, req.files?.doctorImages || [], "Doctor photo");
+    ensureUploaded(fileUploads, req.files?.doctorFiles || [], "Doctor file");
+
     const parsedAvailableTime = parseJson(availableTime, {
       startTime: "",
       endTime: "",
@@ -141,7 +190,7 @@ exports.createDoctor = async (req, res) => {
 
       doctorName: doctorName.trim(),
 
-      doctorCode: doctorCode.trim(),
+      doctorCode: normalizedDoctorCode,
 
       email: normalizedEmail,
 
@@ -161,7 +210,7 @@ exports.createDoctor = async (req, res) => {
 
       consultationFee: toNumber(consultationFee),
 
-      licenseNumber: licenseNumber.trim(),
+      licenseNumber: normalizedLicenseNumber,
 
       bloodGroup: bloodGroup || "",
 
@@ -177,7 +226,9 @@ exports.createDoctor = async (req, res) => {
 
       profileImage: profileUpload[0]?.secure_url || "",
 
-      files: mapUploads(fileUploads, req.files?.doctorFiles || []),
+      doctorImage: null,
+
+      files: [],
 
       availableDays: parseJson(availableDays, []),
 
@@ -191,10 +242,55 @@ exports.createDoctor = async (req, res) => {
       status: status || "active",
     });
 
+    const doctorImage = profileUpload[0]
+      ? await DoctorImg.create({
+          doctorId: newDoctor._id,
+          profileImage: profileUpload[0].secure_url || "",
+          url: profileUpload[0].secure_url || "",
+          publicId: profileUpload[0].public_id || "",
+          name:
+            req.files?.profileImage?.[0]?.originalname ||
+            profileUpload[0].original_filename ||
+            "",
+          type: profileUpload[0].resource_type || "",
+          category: "profile",
+        })
+      : null;
+    const doctorFileDocs = fileUploads.length
+      ? await DoctorImg.insertMany(
+          mapUploads(fileUploads, req.files?.doctorFiles || []).map((file) => ({
+            ...file,
+            doctorId: newDoctor._id,
+            category: "file",
+          })),
+        )
+      : [];
+    const doctorImageDocs = imageUploads.length
+      ? await DoctorImg.insertMany(
+          mapUploads(imageUploads, req.files?.doctorImages || []).map((image) => ({
+            ...image,
+            doctorId: newDoctor._id,
+            category: "image",
+          })),
+        )
+      : [];
+
+    if (doctorImage) {
+      newDoctor.doctorImage = doctorImage._id;
+    }
+
+    if (doctorImageDocs.length || doctorFileDocs.length) {
+      newDoctor.files = [...doctorImageDocs, ...doctorFileDocs].map((file) => file._id);
+    }
+
+    if (doctorImage || doctorImageDocs.length || doctorFileDocs.length) {
+      await newDoctor.save();
+    }
+
     const newUser = await User.create({
       name: doctorName.trim(),
       email: normalizedEmail,
-      phone: phone.trim(),
+      phone: normalizedPhone,
       age: 18,
       gender: gender || "other",
       role: "doctor",
@@ -240,16 +336,17 @@ exports.createDoctor = async (req, res) => {
       success: true,
       message: "Doctor created and mail sent successfully",
       data: {
-        doctor: newDoctor,
+        doctor: await newDoctor.populate([{ path: "doctorImage" }, { path: "files" }]),
         user: newUser,
       },
     });
   } catch (err) {
-    console.log(err);
+    console.error("Create doctor failed:", err);
+    const statusCode = err.name === "ValidationError" ? 400 : 500;
 
-    return res.status(500).json({
+    return res.status(statusCode).json({
       success: false,
-      message: "Server Error",
+      message: err.message || "Server Error",
       error: err.message,
     });
   }
@@ -260,7 +357,9 @@ exports.getAllDoctors = async (req, res) => {
     const doctors = await Doctor.find()
       .populate("hospitalId")
       .populate("departmentId")
-      .populate("subDepartmentId");
+      .populate("subDepartmentId")
+      .populate("doctorImage")
+      .populate("files");
 
     return res.status(200).json({
       success: true,
@@ -286,7 +385,9 @@ exports.getSingleDoctor = async (req, res) => {
     const doctor = await Doctor.findById(id)
       .populate("hospitalId")
       .populate("departmentId")
-      .populate("subDepartmentId");
+      .populate("subDepartmentId")
+      .populate("doctorImage")
+      .populate("files");
 
     if (!doctor) {
       return res.status(404).json({

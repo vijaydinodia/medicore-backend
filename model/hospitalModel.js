@@ -137,19 +137,22 @@ const hospitalSchema = new mongoose.Schema(
 
     images: [
       {
-        url: String,
-        publicId: String,
-        name: String,
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "HospitalImg",
       },
     ],
 
     files: [
       {
-        url: String,
-        publicId: String,
-        name: String,
-        documentName: String,
-        type: String,
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "HospitalImg",
+      },
+    ],
+
+    appointments: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Appointment",
       },
     ],
 

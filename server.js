@@ -25,6 +25,7 @@ const superAdminRoute = require("./routes/superAdminRoute");
 const departmentRoute = require("./routes/departmentRoute");
 const subDepartmentRoute = require("./routes/subDepartmentRoute");
 const doctorRoute = require("./routes/doctorRoute");
+const appointmentRoute = require("./routes/appointmentRoute");
 
 app.use("/user", userRoute);
 app.use("/location", locationRoute);
@@ -33,6 +34,7 @@ app.use("/super-admin", superAdminRoute);
 app.use("/department", departmentRoute);
 app.use("/sub-department", subDepartmentRoute);
 app.use("/doctor", doctorRoute);
+app.use("/appointment", appointmentRoute);
 
 const port = process.env.PORT || 3000;
 

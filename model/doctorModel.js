@@ -126,12 +126,16 @@ const doctorSchema = new mongoose.Schema(
       default: "",
     },
 
+    doctorImage: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "DoctorImg",
+      default: null,
+    },
+
     files: [
       {
-        url: String,
-        publicId: String,
-        name: String,
-        type: String,
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "DoctorImg",
       },
     ],
 

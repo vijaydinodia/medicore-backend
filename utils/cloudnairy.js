@@ -11,35 +11,31 @@ exports.uploadImage = async (files, folder = "medicore/uploads") => {
   const results = [];
 
   for (const file of fileArray) {
-    try {
-      if (!file) continue;
+    if (!file) continue;
 
-      if (typeof file === "string") {
-        const result = await cloudinary.uploader.upload(file, {
-          folder,
-          resource_type: "auto",
-        });
-        results.push(result);
-        continue;
-      }
-
-      const buffer = file?.buffer || file?.data || file;
-      const result = await new Promise((resolve, reject) => {
-        cloudinary.uploader
-          .upload_stream({ folder, resource_type: "auto" }, (error, result) => {
-            if (error) {
-              reject(error);
-            } else {
-              resolve(result);
-            }
-          })
-          .end(buffer);
+    if (typeof file === "string") {
+      const result = await cloudinary.uploader.upload(file, {
+        folder,
+        resource_type: "auto",
       });
-
       results.push(result);
-    } catch (error) {
-      console.error("Error uploading file:", error);
+      continue;
     }
+
+    const buffer = file?.buffer || file?.data || file;
+    const result = await new Promise((resolve, reject) => {
+      cloudinary.uploader
+        .upload_stream({ folder, resource_type: "auto" }, (error, result) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve(result);
+          }
+        })
+        .end(buffer);
+    });
+
+    results.push(result);
   }
 
   return results;
