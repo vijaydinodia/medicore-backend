@@ -36,6 +36,15 @@ const appointmentSchema = new mongoose.Schema(
       default: "pending",
     },
 
+    isReached: {
+      type: Boolean,
+      default: false,
+    },
+
+    shareMedicalHistory: {
+      type: Boolean,
+      default: true,
+    },
   },
   {
     timestamps: true,

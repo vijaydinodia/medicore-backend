@@ -26,6 +26,7 @@ const departmentRoute = require("./routes/departmentRoute");
 const subDepartmentRoute = require("./routes/subDepartmentRoute");
 const doctorRoute = require("./routes/doctorRoute");
 const appointmentRoute = require("./routes/appointmentRoute");
+const medicineRoute = require("./routes/medicineRoute");
 
 app.use("/user", userRoute);
 app.use("/location", locationRoute);
@@ -35,6 +36,7 @@ app.use("/department", departmentRoute);
 app.use("/sub-department", subDepartmentRoute);
 app.use("/doctor", doctorRoute);
 app.use("/appointment", appointmentRoute);
+app.use("/medicine", medicineRoute);
 
 const port = process.env.PORT || 3000;
 
