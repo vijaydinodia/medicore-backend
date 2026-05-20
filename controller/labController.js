@@ -50,8 +50,7 @@ exports.createLab = async (req, res) => {
     if (!(cityId && labName && labCode && email && phone)) {
       return res.status(400).json({
         success: false,
-        message:
-          "City Id, Lab Name, Lab Code, Email and Phone are required",
+        message: "City Id, Lab Name, Lab Code, Email and Phone are required",
       });
     }
 
@@ -223,7 +222,11 @@ exports.getOneLab = async (req, res) => {
     if (req.user.role === "hospital") {
       const loginUser = await User.findById(req.user._id || req.user.id);
 
-      if (!loginUser || String(loginUser.hospitalId) !== String(lab.hospitalId?._id || lab.hospitalId)) {
+      if (
+        !loginUser ||
+        String(loginUser.hospitalId) !==
+          String(lab.hospitalId?._id || lab.hospitalId)
+      ) {
         return res.status(403).json({
           success: false,
           message: "You are not allowed to view this lab",
@@ -276,7 +279,11 @@ exports.getSingleLab = async (req, res) => {
     if (req.user.role === "hospital") {
       const loginUser = await User.findById(req.user._id || req.user.id);
 
-      if (!loginUser || String(loginUser.hospitalId) !== String(lab.hospitalId?._id || lab.hospitalId)) {
+      if (
+        !loginUser ||
+        String(loginUser.hospitalId) !==
+          String(lab.hospitalId?._id || lab.hospitalId)
+      ) {
         return res.status(403).json({
           success: false,
           message: "You are not allowed to view this lab",

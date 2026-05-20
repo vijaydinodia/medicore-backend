@@ -15,7 +15,7 @@ const saltRounds = 10;
 exports.signup = async (req, res) => {
   try {
     const { name, email, phone, age, gender, password, role } = req.body;
-
+    
     // validation
     if (!(name && email && phone && age && gender && password)) {
       return res.status(400).json({
@@ -150,7 +150,8 @@ exports.login = async (req, res) => {
 
     return res.status(400).json({
       success: false,
-      message: "Doctor login account is missing. Please ask the hospital admin to recreate this doctor account.",
+      message:
+        "Doctor login account is missing. Please ask the hospital admin to recreate this doctor account.",
     });
   } catch (err) {
     return res.status(500).json({
@@ -183,7 +184,6 @@ exports.forget = async (req, res) => {
         message: "User does not exist",
       });
     }
-
 
     // generate otp
     const otp = await otpBuilder(exists);
@@ -279,7 +279,6 @@ exports.resetPassword = async (req, res) => {
         message: "User does not exist",
       });
     }
-
 
     // ensure OTP was verified
     if (!exists.isOtpVerified) {
@@ -551,6 +550,3 @@ exports.editProfile = async (req, res) => {
     });
   }
 };
-
-
-
