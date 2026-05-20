@@ -133,10 +133,10 @@ exports.getSingleDepartment = async (req, res) => {
   }
 };
 
-//update deparment
+//update department
 exports.updateDepartment = async (req, res) => {
   try {
-    const { departmentId } = req.params;
+    const { id } = req.params;
 
     const {
       hospitalId,
@@ -155,7 +155,7 @@ exports.updateDepartment = async (req, res) => {
     } = req.body;
 
     // check department exists
-    const existingDepartment = await Department.findById(departmentId);
+    const existingDepartment = await department.findById(id);
 
     if (!existingDepartment) {
       return res.status(404).json({
@@ -166,9 +166,9 @@ exports.updateDepartment = async (req, res) => {
 
     // check duplicate department code
     if (departmentCode) {
-      const duplicateDepartment = await Department.findOne({
+      const duplicateDepartment = await department.findOne({
         departmentCode: departmentCode.trim(),
-        _id: { $ne: departmentId },
+        _id: { $ne: id },
       });
 
       if (duplicateDepartment) {
@@ -180,8 +180,8 @@ exports.updateDepartment = async (req, res) => {
     }
 
     // update department
-    const updatedDepartment = await Department.findByIdAndUpdate(
-      departmentId,
+    const updatedDepartment = await department.findByIdAndUpdate(
+      id,
       {
         hospitalId: hospitalId || existingDepartment.hospitalId,
 

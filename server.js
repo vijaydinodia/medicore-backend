@@ -27,6 +27,8 @@ const subDepartmentRoute = require("./routes/subDepartmentRoute");
 const doctorRoute = require("./routes/doctorRoute");
 const appointmentRoute = require("./routes/appointmentRoute");
 const medicineRoute = require("./routes/medicineRoute");
+const labRoute = require("./routes/labRoute");
+const testRoute = require("./routes/testRoute");
 
 app.use("/user", userRoute);
 app.use("/location", locationRoute);
@@ -37,8 +39,10 @@ app.use("/sub-department", subDepartmentRoute);
 app.use("/doctor", doctorRoute);
 app.use("/appointment", appointmentRoute);
 app.use("/medicine", medicineRoute);
+app.use("/lab", labRoute);
+app.use("/test", testRoute);
 
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 5000;
 
 app.listen(port, () => {
   console.log("server is running on port", port);

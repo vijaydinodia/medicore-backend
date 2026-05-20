@@ -133,6 +133,7 @@ exports.login = async (req, res) => {
           hospitalId: exists.hospitalId,
           departmentId: doctorProfile?.departmentId || exists.departmentId,
           doctorId: doctorProfile?._id || exists.doctorId,
+          labId: exists.labId,
           specialization: doctorProfile?.specialization,
         },
       });

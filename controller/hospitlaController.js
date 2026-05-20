@@ -2,70 +2,15 @@ const hospital = require("../model/hospitalModel");
 const HospitalImg = require("../model/hospitalImgModel");
 const { uploadImage } = require("../utils/cloudnairy");
 
-const toBoolean = (value) => value === true || value === "true";
-const toNumber = (value) =>
-  value === "" || value === undefined ? undefined : Number(value);
-
-const parseDocumentNames = (value) => {
-  if (!value) return [];
-  if (Array.isArray(value)) return value;
-
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-const mapUploads = (uploads, files, documentNames = []) =>
-  uploads.map((item, index) => ({
-    url: item.secure_url,
-    publicId: item.public_id,
-    name: files[index]?.originalname || item.original_filename || "",
-    documentName:
-      documentNames[index]?.trim() ||
-      files[index]?.originalname ||
-      item.original_filename ||
-      "",
-    type: item.resource_type,
-  }));
-
-const mapImageUploads = (uploads, files) =>
-  uploads.map((item, index) => ({
-    url: item.secure_url,
-    publicId: item.public_id,
-    name: files[index]?.originalname || item.original_filename || "",
-    category: "image",
-    type: item.resource_type,
-  }));
-
-const getDocumentNames = (documentNames, files) => {
-  const parsedDocumentNames = parseDocumentNames(documentNames);
-
-  return files.map((file, index) => {
-    const documentName = parsedDocumentNames[index];
-    return documentName?.trim() || file.originalname || `Document ${index + 1}`;
-  });
-};
-
-const ensureUploaded = (uploads, files, label) => {
-  if (files.length && uploads.length !== files.length) {
-    throw new Error(`${label} upload failed`);
-  }
-};
-
-const duplicateFields = [
-  { key: "email", label: "Email" },
-  { key: "phone", label: "Phone" },
-  { key: "hospitalCode", label: "Hospital code" },
-  { key: "registrationNumber", label: "Registration number" },
-];
-
+// get all hospital
 exports.getAllHospital = async (req, res) => {
   try {
     const hospitals = await hospital
-      .find({ isDeleted: false, isActive: true, status: "approved" })
+      .find({
+        isDeleted: false,
+        isActive: true,
+        status: "approved",
+      })
       .populate("images")
       .populate("files")
       .sort({ hospitalName: 1 });
@@ -84,6 +29,7 @@ exports.getAllHospital = async (req, res) => {
   }
 };
 
+// add hospital
 exports.addHospital = async (req, res) => {
   try {
     const {
@@ -136,12 +82,12 @@ exports.addHospital = async (req, res) => {
       });
     }
 
-    // check existing hospital
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedPhone = phone.trim();
     const normalizedHospitalCode = hospitalCode.trim();
     const normalizedRegistrationNumber = registrationNumber.trim();
 
+    // check existing hospital
     const alreadyExists = await hospital.findOne({
       $or: [
         { email: normalizedEmail },
@@ -152,140 +98,149 @@ exports.addHospital = async (req, res) => {
     });
 
     if (alreadyExists) {
-      const duplicate = duplicateFields.find((field) => {
-        const incoming = {
-          email: normalizedEmail,
-          phone: normalizedPhone,
-          hospitalCode: normalizedHospitalCode,
-          registrationNumber: normalizedRegistrationNumber,
-        }[field.key];
-
-        return alreadyExists[field.key] === incoming;
-      });
-
       return res.status(400).json({
         success: false,
-        message: duplicate
-          ? `${duplicate.label} already exists`
-          : "Hospital already exists",
+        message: "Hospital already exists",
       });
     }
 
-    const documentFiles = req.files?.hospitalFiles || [];
-    const parsedDocumentNames = getDocumentNames(documentNames, documentFiles);
+    let logoUrl = "";
+    let imageUploads = [];
+    let fileUploads = [];
 
-    const logoUpload = req.files?.logo?.[0]
-      ? await uploadImage(req.files.logo[0], "medicore/hospitals/logos")
-      : [];
-    const imageUploads = req.files?.hospitalImages?.length
-      ? await uploadImage(req.files.hospitalImages, "medicore/hospitals/images")
-      : [];
-    const fileUploads = documentFiles.length
-      ? await uploadImage(documentFiles, "medicore/hospitals/files")
-      : [];
+    // upload logo
+    if (req.files && req.files.logo && req.files.logo[0]) {
+      const uploadedLogo = await uploadImage(
+        req.files.logo[0],
+        "medicore/hospitals/logos",
+      );
 
-    ensureUploaded(logoUpload, req.files?.logo || [], "Logo");
-    ensureUploaded(imageUploads, req.files?.hospitalImages || [], "Hospital image");
-    ensureUploaded(fileUploads, documentFiles, "Document");
+      if (uploadedLogo.length) {
+        logoUrl = uploadedLogo[0].secure_url;
+      }
+    }
+
+    // upload hospital images
+    if (req.files && req.files.hospitalImages) {
+      imageUploads = await uploadImage(
+        req.files.hospitalImages,
+        "medicore/hospitals/images",
+      );
+    }
+
+    // upload hospital files
+    if (req.files && req.files.hospitalFiles) {
+      fileUploads = await uploadImage(
+        req.files.hospitalFiles,
+        "medicore/hospitals/files",
+      );
+    }
 
     // create hospital
     const newHospital = await hospital.create({
       hospitalName: hospitalName.trim(),
-
       hospitalCode: normalizedHospitalCode,
-
       hospitalType,
-
       email: normalizedEmail,
-
       phone: normalizedPhone,
-
       alternatePhone: alternatePhone ? alternatePhone.trim() : "",
-
       website: website ? website.trim() : "",
-
       registrationNumber: normalizedRegistrationNumber,
-
-      establishedYear: toNumber(establishedYear),
-
+      establishedYear: establishedYear || undefined,
       stateId,
       districtId,
       cityId,
-
       address: address.trim(),
-
       pincode: pincode.trim(),
-
-      totalBeds: toNumber(totalBeds) || 0,
-
-      availableBeds: toNumber(availableBeds) || 0,
-
-      totalDoctors: toNumber(totalDoctors) || 0,
-
-      totalStaff: toNumber(totalStaff) || 0,
-
-      emergencyAvailable: toBoolean(emergencyAvailable),
-
-      ambulanceAvailable: toBoolean(ambulanceAvailable),
-
-      ICUAvailable: toBoolean(ICUAvailable),
-
-      bloodBankAvailable: toBoolean(bloodBankAvailable),
-
-      pharmacyAvailable: toBoolean(pharmacyAvailable),
-
-      logo: logoUpload[0]?.secure_url || "",
-
+      totalBeds: totalBeds || 0,
+      availableBeds: availableBeds || 0,
+      totalDoctors: totalDoctors || 0,
+      totalStaff: totalStaff || 0,
+      emergencyAvailable:
+        emergencyAvailable === true || emergencyAvailable === "true",
+      ambulanceAvailable:
+        ambulanceAvailable === true || ambulanceAvailable === "true",
+      ICUAvailable: ICUAvailable === true || ICUAvailable === "true",
+      bloodBankAvailable:
+        bloodBankAvailable === true || bloodBankAvailable === "true",
+      pharmacyAvailable:
+        pharmacyAvailable === true || pharmacyAvailable === "true",
+      logo: logoUrl,
       images: [],
-
       files: [],
-
       description: description ? description.trim() : "",
     });
 
-    const hospitalImageDocs = imageUploads.length
-      ? await HospitalImg.insertMany(
-          mapImageUploads(imageUploads, req.files?.hospitalImages || []).map(
-            (image) => ({
-              ...image,
-              hospitalId: newHospital._id,
-            }),
-          ),
-        )
-      : [];
-    const hospitalFileDocs = fileUploads.length
-      ? await HospitalImg.insertMany(
-          mapUploads(fileUploads, documentFiles, parsedDocumentNames).map(
-            (file) => ({
-              ...file,
-              category: "document",
-              hospitalId: newHospital._id,
-            }),
-          ),
-        )
-      : [];
+    const hospitalImages = [];
+    const hospitalFiles = [];
+    let parsedDocumentNames = [];
 
-    if (hospitalImageDocs.length || hospitalFileDocs.length) {
-      newHospital.images = hospitalImageDocs.map((image) => image._id);
-      newHospital.files = hospitalFileDocs.map((file) => file._id);
-      await newHospital.save();
+    if (documentNames) {
+      try {
+        parsedDocumentNames = JSON.parse(documentNames);
+      } catch (err) {
+        parsedDocumentNames = [];
+      }
     }
 
-    await newHospital.populate([{ path: "images" }, { path: "files" }]);
+    // save hospital image records
+    if (imageUploads.length) {
+      for (let i = 0; i < imageUploads.length; i++) {
+        const image = await HospitalImg.create({
+          hospitalId: newHospital._id,
+          url: imageUploads[i].secure_url,
+          publicId: imageUploads[i].public_id,
+          name:
+            req.files.hospitalImages[i].originalname ||
+            imageUploads[i].original_filename ||
+            "",
+          category: "image",
+          type: imageUploads[i].resource_type,
+        });
 
-    // response
+        hospitalImages.push(image._id);
+      }
+    }
+
+    // save hospital file records
+    if (fileUploads.length) {
+      for (let i = 0; i < fileUploads.length; i++) {
+        const file = await HospitalImg.create({
+          hospitalId: newHospital._id,
+          url: fileUploads[i].secure_url,
+          publicId: fileUploads[i].public_id,
+          name:
+            req.files.hospitalFiles[i].originalname ||
+            fileUploads[i].original_filename ||
+            "",
+          documentName:
+            parsedDocumentNames[i] ||
+            req.files.hospitalFiles[i].originalname ||
+            `Document ${i + 1}`,
+          category: "document",
+          type: fileUploads[i].resource_type,
+        });
+
+        hospitalFiles.push(file._id);
+      }
+    }
+
+    newHospital.images = hospitalImages;
+    newHospital.files = hospitalFiles;
+
+    await newHospital.save();
+    await newHospital.populate("images");
+    await newHospital.populate("files");
+
     return res.status(201).json({
       success: true,
       message: "Hospital added successfully",
       data: newHospital,
     });
   } catch (err) {
-    console.error("Add hospital failed:", err);
-    const statusCode = err.name === "ValidationError" ? 400 : 500;
-
-    return res.status(statusCode).json({
+    return res.status(500).json({
       success: false,
-      message: err.message || "Server Error",
+      message: "Server Error",
       error: err.message,
     });
   }
