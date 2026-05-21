@@ -97,6 +97,31 @@ const medicineSchema = new mongoose.Schema(
       },
     ],
 
+    tests: [
+      {
+        testId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Test",
+        },
+
+        labId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Labs",
+        },
+
+        testName: {
+          type: String,
+          default: "",
+        },
+
+        status: {
+          type: String,
+          enum: ["pending", "completed"],
+          default: "pending",
+        },
+      },
+    ],
+
     notes: {
       type: String,
       default: "",

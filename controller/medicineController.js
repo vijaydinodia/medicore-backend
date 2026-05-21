@@ -1,6 +1,8 @@
 const Appointment = require("../model/appointmentModel");
 const Doctor = require("../model/doctorModel");
 const Medicine = require("../model/medicineModel");
+const Report = require("../model/reportModel");
+const Test = require("../model/testModel");
 const User = require("../model/userModel");
 
 // save medicine
@@ -15,6 +17,7 @@ exports.saveMedicine = async (req, res) => {
       weight,
       nextVisitDate,
       medicines,
+      tests,
       notes,
     } = req.body;
 
@@ -86,6 +89,31 @@ exports.saveMedicine = async (req, res) => {
       }
     }
 
+    // make test array clean
+    const testList = [];
+
+    if (Array.isArray(tests)) {
+      for (const item of tests) {
+        if (item.testId) {
+          const test = await Test.findOne({
+            _id: item.testId,
+            hospitalId: appointment.hospitalId,
+            isDeleted: false,
+            status: "active",
+          });
+
+          if (test) {
+            testList.push({
+              testId: test._id,
+              labId: test.labId,
+              testName: test.testName,
+              status: "pending",
+            });
+          }
+        }
+      }
+    }
+
     // save or update medicine
     const savedMedicine = await Medicine.findOneAndUpdate(
       { appointmentId: appointment._id },
@@ -98,6 +126,7 @@ exports.saveMedicine = async (req, res) => {
         weight: weight ? weight.trim() : "",
         nextVisitDate: nextVisitDate ? new Date(nextVisitDate) : undefined,
         medicines: medicineList,
+        tests: testList,
         notes: notes ? notes.trim() : "",
         status: "completed",
       },
@@ -114,6 +143,92 @@ exports.saveMedicine = async (req, res) => {
       success: true,
       message: "Medicine saved successfully",
       data: savedMedicine,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: err.message,
+    });
+  }
+};
+
+// get lab test patients
+exports.getLabTestPatients = async (req, res) => {
+  try {
+    if (req.user.role !== "lab") {
+      return res.status(403).json({
+        success: false,
+        message: "Only lab can view test patients",
+      });
+    }
+
+    const loginUser = await User.findById(req.user._id || req.user.id);
+
+    if (!loginUser || !loginUser.labId) {
+      return res.status(404).json({
+        success: false,
+        message: "Lab account details are missing",
+      });
+    }
+
+    const medicines = await Medicine.find({ "tests.labId": loginUser.labId })
+      .populate({
+        path: "appointmentId",
+        populate: [
+          { path: "userId", select: "-password -otp -otpExpire" },
+          { path: "doctorId" },
+          { path: "hospitalId" },
+        ],
+      })
+      .populate("tests.testId")
+      .populate("tests.labId")
+      .sort({ createdAt: -1 });
+    const medicineIds = medicines.map((medicine) => medicine._id);
+    const reports = await Report.find({
+      medicineId: { $in: medicineIds },
+      labId: loginUser.labId,
+    });
+
+    const data = [];
+
+    for (const medicine of medicines) {
+      const tests = [];
+
+      for (const test of medicine.tests || []) {
+        if (String(test.labId?._id || test.labId) === String(loginUser.labId)) {
+          const report = reports.find((item) => {
+            return (
+              String(item.medicineId) === String(medicine._id) &&
+              String(item.testId) === String(test.testId?._id || test.testId)
+            );
+          });
+
+          tests.push({
+            ...test.toObject(),
+            report,
+          });
+        }
+      }
+
+      if (tests.length > 0) {
+        data.push({
+          _id: medicine._id,
+          appointment: medicine.appointmentId,
+          diagnosis: medicine.diagnosis,
+          symptoms: medicine.symptoms,
+          notes: medicine.notes,
+          tests,
+          createdAt: medicine.createdAt,
+        });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Lab test patients fetched successfully",
+      count: data.length,
+      data,
     });
   } catch (err) {
     return res.status(500).json({

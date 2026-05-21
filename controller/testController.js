@@ -1,4 +1,5 @@
 const Test = require("../model/testModel");
+const Doctor = require("../model/doctorModel");
 const User = require("../model/userModel");
 
 // create test
@@ -134,6 +135,23 @@ exports.getAllTests = async (req, res) => {
 
       if (loginUser && loginUser.hospitalId) {
         filter.hospitalId = loginUser.hospitalId;
+      }
+    }
+
+    if (req.user && req.user.role === "doctor") {
+      const loginUser = await User.findById(req.user._id || req.user.id);
+      let doctor = null;
+
+      if (loginUser && loginUser.doctorId) {
+        doctor = await Doctor.findById(loginUser.doctorId);
+      }
+
+      if (!doctor && loginUser) {
+        doctor = await Doctor.findOne({ email: loginUser.email });
+      }
+
+      if (doctor && doctor.hospitalId) {
+        filter.hospitalId = doctor.hospitalId;
       }
     }
 

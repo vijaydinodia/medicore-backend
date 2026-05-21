@@ -2,6 +2,7 @@ const Appointment = require("../model/appointmentModel");
 const Doctor = require("../model/doctorModel");
 const Hospital = require("../model/hospitalModel");
 const Medicine = require("../model/medicineModel");
+const Report = require("../model/reportModel");
 const User = require("../model/userModel");
 const mailSender = require("../utils/mailSender");
 const appointmentBookedTemplate = require("../templates/appointmentBookedTemplate");
@@ -107,7 +108,16 @@ const attachMedicineToAppointments = async (appointments) => {
     appointmentIds.push(plainAppointment._id);
   }
 
-  const medicines = await Medicine.find({ appointmentId: { $in: appointmentIds } }).sort({ createdAt: -1 }).lean();
+  const medicines = await Medicine.find({ appointmentId: { $in: appointmentIds } })
+    .populate("tests.testId")
+    .populate("tests.labId")
+    .sort({ createdAt: -1 })
+    .lean();
+  const reports = await Report.find({ appointmentId: { $in: appointmentIds } })
+    .populate("testId")
+    .populate("labId")
+    .sort({ createdAt: -1 })
+    .lean();
   const finalAppointments = [];
 
   for (const appointment of plainAppointments) {
@@ -123,6 +133,7 @@ const attachMedicineToAppointments = async (appointments) => {
     finalAppointments.push({
       ...appointment,
       medicine: appointmentMedicine,
+      reports: reports.filter((report) => String(report.appointmentId) === String(appointment._id)),
     });
   }
 

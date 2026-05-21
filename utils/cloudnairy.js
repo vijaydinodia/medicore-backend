@@ -6,18 +6,21 @@ cloudinary.config({
   api_secret: "3XWIpGNiRSe2K2Cs2t9-fUtPPY0",
 });
 
-exports.uploadImage = async (files, folder = "medicore/uploads") => {
+exports.uploadImage = async (files, folder = "medicore/uploads", options = {}) => {
   const fileArray = Array.isArray(files) ? files : [files];
   const results = [];
 
   for (const file of fileArray) {
     if (!file) continue;
 
+    const uploadOptions = {
+      folder,
+      resource_type: "auto",
+      ...options,
+    };
+
     if (typeof file === "string") {
-      const result = await cloudinary.uploader.upload(file, {
-        folder,
-        resource_type: "auto",
-      });
+      const result = await cloudinary.uploader.upload(file, uploadOptions);
       results.push(result);
       continue;
     }
@@ -25,7 +28,7 @@ exports.uploadImage = async (files, folder = "medicore/uploads") => {
     const buffer = file?.buffer || file?.data || file;
     const result = await new Promise((resolve, reject) => {
       cloudinary.uploader
-        .upload_stream({ folder, resource_type: "auto" }, (error, result) => {
+        .upload_stream(uploadOptions, (error, result) => {
           if (error) {
             reject(error);
           } else {

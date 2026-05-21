@@ -15,7 +15,7 @@ const saltRounds = 10;
 exports.signup = async (req, res) => {
   try {
     const { name, email, phone, age, gender, password, role } = req.body;
-    
+
     // validation
     if (!(name && email && phone && age && gender && password)) {
       return res.status(400).json({
@@ -203,7 +203,7 @@ exports.forget = async (req, res) => {
   } catch (err) {
     return res.status(500).json({
       success: false,
-      message: "Server Error",
+      message: err.message || "Unable to send OTP",
       error: err.message,
     });
   }
@@ -237,7 +237,10 @@ exports.verifyOtp = async (req, res) => {
 
     const isMatch = await bcrypt.compare(otp, exists.otp);
     if (!isMatch) {
-      return res.status(400).json({ message: "Invalid OTP" });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP. Please use the latest OTP sent to your email.",
+      });
     }
 
     // mark verified

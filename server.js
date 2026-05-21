@@ -6,10 +6,33 @@ require("dotenv").config();
 const app = express();
 
 app.use(express.json());
+
+const defaultOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "https://medicore-vijay-dinodia.onrender.com",
+];
+
+const envOrigins = process.env.FRONTEND_URLS
+  ? process.env.FRONTEND_URLS.split(",").map((origin) => origin.trim())
+  : [];
+
+const allowedOrigins = [...defaultOrigins, ...envOrigins];
+
 app.use(
   cors({
-    origin: ["https://medicore-vijay-dinodia.onrender.com"],
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
 
@@ -29,6 +52,7 @@ const appointmentRoute = require("./routes/appointmentRoute");
 const medicineRoute = require("./routes/medicineRoute");
 const labRoute = require("./routes/labRoute");
 const testRoute = require("./routes/testRoute");
+const reportRoute = require("./routes/reportRoute");
 
 app.use("/user", userRoute);
 app.use("/location", locationRoute);
@@ -41,6 +65,7 @@ app.use("/appointment", appointmentRoute);
 app.use("/medicine", medicineRoute);
 app.use("/lab", labRoute);
 app.use("/test", testRoute);
+app.use("/report", reportRoute);
 
 const port = process.env.PORT || 5000;
 
