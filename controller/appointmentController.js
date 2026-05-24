@@ -51,7 +51,12 @@ const buildTimeSlots = (availableTime = {}) => {
 };
 
 const getDayRange = (dateValue = new Date()) => {
-  const date = new Date(dateValue);
+  let date = dateValue instanceof Date ? new Date(dateValue) : new Date(dateValue);
+
+  if (typeof dateValue === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+    const [year, month, day] = dateValue.split("-").map(Number);
+    date = new Date(year, month - 1, day);
+  }
 
   if (Number.isNaN(date.getTime())) return null;
 
