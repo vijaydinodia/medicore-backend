@@ -1,6 +1,32 @@
 const hospital = require("../model/hospitalModel");
 const HospitalImg = require("../model/hospitalImgModel");
+const State = require("../model/stateModel");
+const District = require("../model/districtModel");
+const City = require("../model/cityModel");
 const { uploadImage } = require("../utils/cloudnairy");
+
+const validateActiveLocation = async ({ stateId, districtId, cityId }) => {
+  const [state, district, city] = await Promise.all([
+    State.findById(stateId),
+    District.findById(districtId).populate("stateId"),
+    City.findById(cityId).populate({
+      path: "districtId",
+      populate: { path: "stateId" },
+    }),
+  ]);
+
+  if (!state) return "State not found";
+  if (!district) return "District not found";
+  if (!city) return "City not found";
+  if (state.status !== "active") return "Cannot add hospital in an inactive state";
+  if (district.status !== "active") return "Cannot add hospital in an inactive district";
+  if (city.status !== "active") return "Cannot add hospital in an inactive city";
+  if (String(district.stateId?._id || district.stateId) !== String(stateId)) return "District does not belong to selected state";
+  if (String(city.districtId?._id || city.districtId) !== String(districtId)) return "City does not belong to selected district";
+  if (String(city.districtId?.stateId?._id || city.districtId?.stateId) !== String(stateId)) return "City does not belong to selected state";
+
+  return "";
+};
 
 // get all hospital
 exports.getAllHospital = async (req, res) => {
@@ -13,12 +39,49 @@ exports.getAllHospital = async (req, res) => {
       })
       .populate("images")
       .populate("files")
+      .populate("stateId")
+      .populate("districtId")
+      .populate("cityId")
       .sort({ hospitalName: 1 });
+    const activeHospitals = hospitals.filter((item) => {
+      return item.stateId?.status === "active" && item.districtId?.status === "active" && item.cityId?.status === "active";
+    });
 
     return res.status(200).json({
       success: true,
-      count: hospitals.length,
-      data: hospitals,
+      count: activeHospitals.length,
+      data: activeHospitals,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: err.message,
+    });
+  }
+};
+
+// get single hospital
+exports.getSingleHospital = async (req, res) => {
+  try {
+    const selectedHospital = await hospital
+      .findById(req.params.id)
+      .populate("images")
+      .populate("files")
+      .populate("stateId")
+      .populate("districtId")
+      .populate("cityId");
+
+    if (!selectedHospital) {
+      return res.status(404).json({
+        success: false,
+        message: "Hospital not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: selectedHospital,
     });
   } catch (err) {
     return res.status(500).json({
@@ -86,6 +149,14 @@ exports.addHospital = async (req, res) => {
     const normalizedPhone = phone.trim();
     const normalizedHospitalCode = hospitalCode.trim();
     const normalizedRegistrationNumber = registrationNumber.trim();
+    const locationError = await validateActiveLocation({ stateId, districtId, cityId });
+
+    if (locationError) {
+      return res.status(400).json({
+        success: false,
+        message: locationError,
+      });
+    }
 
     // check existing hospital
     const alreadyExists = await hospital.findOne({

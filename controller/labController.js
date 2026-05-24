@@ -1,5 +1,7 @@
 const Lab = require("../model/labModel");
 const User = require("../model/userModel");
+const Hospital = require("../model/hospitalModel");
+const City = require("../model/cityModel");
 const bcrypt = require("bcrypt");
 const { v4: uuidv4 } = require("uuid");
 const mailSender = require("../utils/mailSender");
@@ -51,6 +53,35 @@ exports.createLab = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "City Id, Lab Name, Lab Code, Email and Phone are required",
+      });
+    }
+
+    const [hospital, city] = await Promise.all([
+      Hospital.findById(hospitalId),
+      City.findById(cityId).populate({
+        path: "districtId",
+        populate: { path: "stateId" },
+      }),
+    ]);
+
+    if (!hospital) {
+      return res.status(404).json({
+        success: false,
+        message: "Hospital not found",
+      });
+    }
+
+    if (hospital.isDeleted || hospital.isActive === false || hospital.status !== "approved") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot add lab because this hospital is inactive or not approved",
+      });
+    }
+
+    if (!city || city.status !== "active" || city.districtId?.status !== "active" || city.districtId?.stateId?.status !== "active") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot add lab in an inactive city, district, or state",
       });
     }
 

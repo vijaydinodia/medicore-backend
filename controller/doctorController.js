@@ -161,6 +161,27 @@ exports.createDoctor = async (req, res) => {
       });
     }
 
+    if (hospital.isDeleted || hospital.isActive === false || hospital.status !== "approved") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot add doctor because this hospital is inactive or not approved",
+      });
+    }
+
+    if (department.status !== "active" || String(department.hospitalId) !== String(hospitalId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot add doctor because the department is inactive or not in this hospital",
+      });
+    }
+
+    if (subDepartment && (subDepartment.status !== "active" || String(subDepartment.hospitalId) !== String(hospitalId))) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot add doctor because the sub department is inactive or not in this hospital",
+      });
+    }
+
     const profileUpload = req.files?.profileImage?.[0]
       ? await uploadImage(req.files.profileImage[0], "medicore/doctors/profile")
       : [];

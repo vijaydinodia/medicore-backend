@@ -17,6 +17,20 @@ const isValidHospitalId = (id) => {
 
 const withHospitalImages = (query) => query.populate("images").populate("files");
 
+const isHospitalLocationActive = async (hospitalId) => {
+  const existingHospital = await hospital
+    .findById(hospitalId)
+    .populate("stateId")
+    .populate("districtId")
+    .populate("cityId");
+
+  return Boolean(
+    existingHospital?.stateId?.status === "active" &&
+      existingHospital?.districtId?.status === "active" &&
+      existingHospital?.cityId?.status === "active",
+  );
+};
+
 //reject hospital
 exports.rejectHospital = async (req, res) => {
   try {
@@ -384,7 +398,20 @@ exports.toggleActiveHospital = async (req, res) => {
       });
     }
 
-    existingHospital.isActive = !existingHospital.isActive;
+    const nextActiveState = !existingHospital.isActive;
+
+    if (nextActiveState) {
+      const locationIsActive = await isHospitalLocationActive(existingHospital._id);
+
+      if (!locationIsActive) {
+        return res.status(400).json({
+          success: false,
+          message: "Cannot restore hospital while its state, district, or city is inactive or deleted",
+        });
+      }
+    }
+
+    existingHospital.isActive = nextActiveState;
     await existingHospital.save();
 
     return res.status(200).json({

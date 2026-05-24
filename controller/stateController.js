@@ -1,6 +1,7 @@
 const stateModel = require("../model/stateModel");
 const districtModel = require("../model/districtModel");
-const mongoose = require("mongoose");
+const cityModel = require("../model/cityModel");
+const hospitalModel = require("../model/hospitalModel");
 
 //create state
 exports.createState = async (req, res) => {
@@ -152,17 +153,11 @@ exports.getOneState = async (req, res) => {
 
 //delete state
 exports.deleteState = async (req, res) => {
-  const session = await mongoose.startSession();
-
   try {
-    session.startTransaction();
-
     const { id } = req.params;
 
     // validation
     if (!id) {
-      await session.abortTransaction();
-
       return res.status(400).json({
         success: false,
         message: "State id is required",
@@ -170,11 +165,9 @@ exports.deleteState = async (req, res) => {
     }
 
     // check state exists
-    const exists = await stateModel.findById(id).session(session);
+    const exists = await stateModel.findById(id);
 
     if (!exists) {
-      await session.abortTransaction();
-
       return res.status(404).json({
         success: false,
         message: "State not found",
@@ -182,50 +175,36 @@ exports.deleteState = async (req, res) => {
     }
 
     // get districts
-    const districts = await districtModel
-      .find({ stateId: id })
-      .session(session);
+    const districts = await districtModel.find({ stateId: id });
 
     // district ids
     const districtIds = districts.map((district) => district._id);
 
+    await hospitalModel.updateMany({ stateId: id }, { isActive: false });
+
     // delete cities
-    await cityModel
-      .deleteMany({
-        districtId: {
-          $in: districtIds,
-        },
-      })
-      .session(session);
+    await cityModel.deleteMany({
+      districtId: {
+        $in: districtIds,
+      },
+    });
 
     // delete districts
-    await districtModel
-      .deleteMany({
-        stateId: id,
-      })
-      .session(session);
+    await districtModel.deleteMany({
+      stateId: id,
+    });
 
     // delete state
-    await stateModel.findByIdAndDelete(id).session(session);
-
-    // commit transaction
-    await session.commitTransaction();
-
-    session.endSession();
+    await stateModel.findByIdAndDelete(id);
 
     return res.status(200).json({
       success: true,
-      message: "State, districts and cities deleted successfully",
+      message: "State, districts and cities deleted successfully. Related hospitals were deactivated.",
     });
   } catch (err) {
-    // rollback
-    await session.abortTransaction();
-
-    session.endSession();
-
     return res.status(500).json({
       success: false,
-      message: "Transaction failed",
+      message: "Server Error",
       error: err.message,
     });
   }
@@ -267,6 +246,11 @@ exports.softDeleteState = async (req, res) => {
     exists.status = "inactive";
 
     await exists.save();
+    await districtModel.updateMany({ stateId: id }, { status: "inactive" });
+    const districts = await districtModel.find({ stateId: id }).select("_id");
+    const districtIds = districts.map((district) => district._id);
+    await cityModel.updateMany({ districtId: { $in: districtIds } }, { status: "inactive" });
+    await hospitalModel.updateMany({ stateId: id }, { isActive: false });
 
     return res.status(200).json({
       success: true,

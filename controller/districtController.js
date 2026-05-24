@@ -1,6 +1,7 @@
 const districtModel = require("../model/districtModel");
 const stateModel = require("../model/stateModel");
 const cityModel = require("../model/cityModel");
+const hospitalModel = require("../model/hospitalModel");
 
 // create district
 exports.createDistrict = async (req, res) => {
@@ -22,6 +23,13 @@ exports.createDistrict = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "State not found",
+      });
+    }
+
+    if (stateExists.status !== "active") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot add district in an inactive state",
       });
     }
 
@@ -209,12 +217,14 @@ exports.deleteDistrict = async (req, res) => {
       districtId: id,
     });
 
+    await hospitalModel.updateMany({ districtId: id }, { isActive: false });
+
     // delete district
     await districtModel.findByIdAndDelete(id);
 
     return res.status(200).json({
       success: true,
-      message: "District and cities deleted successfully",
+      message: "District and cities deleted successfully. Related hospitals were deactivated.",
     });
   } catch (err) {
     return res.status(500).json({
@@ -242,6 +252,8 @@ exports.softDeleteDistrict = async (req, res) => {
     exists.status = "inactive";
 
     await exists.save();
+    await cityModel.updateMany({ districtId: id }, { status: "inactive" });
+    await hospitalModel.updateMany({ districtId: id }, { isActive: false });
 
     return res.status(200).json({
       success: true,
@@ -267,6 +279,15 @@ exports.restoreDistrict = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "District not found",
+      });
+    }
+
+    const state = await stateModel.findById(exists.stateId);
+
+    if (!state || state.status !== "active") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot restore district while parent state is inactive",
       });
     }
 

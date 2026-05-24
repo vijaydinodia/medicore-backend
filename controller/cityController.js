@@ -1,5 +1,6 @@
 const cityModel = require("../model/cityModel");
 const districtModel = require("../model/districtModel");
+const hospitalModel = require("../model/hospitalModel");
 
 // create city
 exports.createCity = async (req, res) => {
@@ -15,12 +16,19 @@ exports.createCity = async (req, res) => {
     }
 
     // check district exists
-    const districtExists = await districtModel.findById(districtId);
+    const districtExists = await districtModel.findById(districtId).populate("stateId");
 
     if (!districtExists) {
       return res.status(404).json({
         success: false,
         message: "District not found",
+      });
+    }
+
+    if (districtExists.status !== "active" || districtExists.stateId?.status !== "active") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot add city in an inactive district or state",
       });
     }
 
@@ -215,11 +223,12 @@ exports.deleteCity = async (req, res) => {
       });
     }
 
+    await hospitalModel.updateMany({ cityId: id }, { isActive: false });
     await cityModel.findByIdAndDelete(id);
 
     return res.status(200).json({
       success: true,
-      message: "City deleted successfully",
+      message: "City deleted successfully. Related hospitals were deactivated.",
     });
   } catch (err) {
     return res.status(500).json({
@@ -247,6 +256,7 @@ exports.softDeleteCity = async (req, res) => {
     exists.status = "inactive";
 
     await exists.save();
+    await hospitalModel.updateMany({ cityId: id }, { isActive: false });
 
     return res.status(200).json({
       success: true,
@@ -266,12 +276,22 @@ exports.restoreCity = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const exists = await cityModel.findById(id);
+    const exists = await cityModel.findById(id).populate({
+      path: "districtId",
+      populate: { path: "stateId" },
+    });
 
     if (!exists) {
       return res.status(404).json({
         success: false,
         message: "City not found",
+      });
+    }
+
+    if (exists.districtId?.status !== "active" || exists.districtId?.stateId?.status !== "active") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot restore city while parent district or state is inactive",
       });
     }
 

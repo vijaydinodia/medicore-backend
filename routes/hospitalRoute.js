@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const multer = require("multer");
 
-const { addHospital, getAllHospital } = require("../controller/hospitlaController");
+const { addHospital, getAllHospital, getSingleHospital } = require("../controller/hospitlaController");
 const upload = require("../middleware/upload");
 
 const hospitalUpload = upload.fields([
@@ -32,5 +32,6 @@ router.post(
   addHospital,
 );
 router.get("/getAllHospital", getAllHospital);
+router.get("/getSingleHospital/:id", getSingleHospital);
 
 module.exports = router;

@@ -1,4 +1,6 @@
 const SubDepartment = require("../model/subDepartmentModel");
+const Hospital = require("../model/hospitalModel");
+const Department = require("../model/departmentModel");
 
 // create subdepartment 
 exports.createSubDepartment = async (req, res) => {
@@ -29,6 +31,32 @@ exports.createSubDepartment = async (req, res) => {
         success: false,
         message:
           "Hospital Id, Department Id, Sub Department Name and Sub Department Code are required",
+      });
+    }
+
+    const [hospital, department] = await Promise.all([
+      Hospital.findById(hospitalId),
+      Department.findById(departmentId),
+    ]);
+
+    if (!hospital || !department) {
+      return res.status(404).json({
+        success: false,
+        message: !hospital ? "Hospital not found" : "Department not found",
+      });
+    }
+
+    if (hospital.isDeleted || hospital.isActive === false || hospital.status !== "approved") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot add sub department because this hospital is inactive or not approved",
+      });
+    }
+
+    if (department.status !== "active" || String(department.hospitalId) !== String(hospitalId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot add sub department because the department is inactive or not in this hospital",
       });
     }
 

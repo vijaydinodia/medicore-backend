@@ -1,4 +1,5 @@
 const department = require("../model/departmentModel");
+const Hospital = require("../model/hospitalModel");
 
 //create department
 exports.createDepartment = async (req, res) => {
@@ -25,6 +26,22 @@ exports.createDepartment = async (req, res) => {
 
         message:
           "Hospital Id, Department Name and Department Code are required",
+      });
+    }
+
+    const hospital = await Hospital.findById(hospitalId);
+
+    if (!hospital) {
+      return res.status(404).json({
+        success: false,
+        message: "Hospital not found",
+      });
+    }
+
+    if (hospital.isDeleted || hospital.isActive === false || hospital.status !== "approved") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot add department because this hospital is inactive or not approved",
       });
     }
 
