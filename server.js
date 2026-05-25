@@ -5,7 +5,7 @@ require("dotenv").config();
 
 const app = express();
 
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 
 const defaultOrigins = [
   "http://localhost:5173",
@@ -53,6 +53,7 @@ const medicineRoute = require("./routes/medicineRoute");
 const labRoute = require("./routes/labRoute");
 const testRoute = require("./routes/testRoute");
 const reportRoute = require("./routes/reportRoute");
+const statReportRoute = require("./routes/statReportRoute");
 
 app.use("/user", userRoute);
 app.use("/location", locationRoute);
@@ -66,6 +67,7 @@ app.use("/medicine", medicineRoute);
 app.use("/lab", labRoute);
 app.use("/test", testRoute);
 app.use("/report", reportRoute);
+app.use("/stat-report", statReportRoute);
 
 const port = process.env.PORT || 5000;
 
