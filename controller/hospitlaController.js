@@ -31,26 +31,61 @@ const validateActiveLocation = async ({ stateId, districtId, cityId }) => {
 // get all hospital
 exports.getAllHospital = async (req, res) => {
   try {
+    let page = Number(req.query.page) || 1;
+    let limit = Number(req.query.limit) || 6;
+
+    if (page < 1) {
+      page = 1;
+    }
+
+    if (limit < 1) {
+      limit = 6;
+    }
+
+    if (limit > 20) {
+      limit = 20;
+    }
+
+    const skip = (page - 1) * limit;
+
+    const activeStates = await State.find({ status: "active" }).select("_id");
+    const activeDistricts = await District.find({ status: "active" }).select("_id");
+    const activeCities = await City.find({ status: "active" }).select("_id");
+
+    const activeStateIds = activeStates.map((state) => state._id);
+    const activeDistrictIds = activeDistricts.map((district) => district._id);
+    const activeCityIds = activeCities.map((city) => city._id);
+
+    const filter = {
+      isDeleted: false,
+      isActive: true,
+      status: "approved",
+      stateId: { $in: activeStateIds },
+      districtId: { $in: activeDistrictIds },
+      cityId: { $in: activeCityIds },
+    };
+
     const hospitals = await hospital
-      .find({
-        isDeleted: false,
-        isActive: true,
-        status: "approved",
-      })
+      .find(filter)
       .populate("images")
       .populate("files")
       .populate("stateId")
       .populate("districtId")
       .populate("cityId")
-      .sort({ hospitalName: 1 });
-    const activeHospitals = hospitals.filter((item) => {
-      return item.stateId?.status === "active" && item.districtId?.status === "active" && item.cityId?.status === "active";
-    });
+      .sort({ hospitalName: 1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await hospital.countDocuments(filter);
 
     return res.status(200).json({
       success: true,
-      count: activeHospitals.length,
-      data: activeHospitals,
+      page,
+      limit,
+      totalRecords: total,
+      totalPages: Math.ceil(total / limit),
+      count: hospitals.length,
+      data: hospitals,
     });
   } catch (err) {
     return res.status(500).json({
