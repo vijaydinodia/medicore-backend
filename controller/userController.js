@@ -1,5 +1,6 @@
 const User = require("../model/userModel");
 const Doctor = require("../model/doctorModel");
+const MedicalStore = require("../model/medicalStoreModel");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const moment = require("moment");
@@ -105,6 +106,13 @@ exports.login = async (req, res) => {
           : await Doctor.findOne({ email: exists.email });
       }
 
+      let medicalStoreProfile = null;
+      if (exists.role === "medical") {
+        medicalStoreProfile = exists.medicalStoreId
+          ? await MedicalStore.findById(exists.medicalStoreId)
+          : await MedicalStore.findOne({ email: exists.email });
+      }
+
       const token = jwt.sign(
         {
           _id: exists._id,
@@ -121,19 +129,21 @@ exports.login = async (req, res) => {
         token,
         user: {
           _id: exists._id,
-          name: doctorProfile?.doctorName || exists.name,
+          name: doctorProfile?.doctorName || medicalStoreProfile?.medicalName || exists.name,
           doctorName: doctorProfile?.doctorName,
+          medicalName: medicalStoreProfile?.medicalName,
           email: exists.email,
           phone: exists.phone,
           age: exists.age,
           gender: exists.gender,
           profileImage: doctorProfile?.profileImage || exists.profileImage,
           role: exists.role,
-          status: doctorProfile?.status || exists.status,
+          status: doctorProfile?.status || medicalStoreProfile?.status || exists.status,
           hospitalId: exists.hospitalId,
           departmentId: doctorProfile?.departmentId || exists.departmentId,
           doctorId: doctorProfile?._id || exists.doctorId,
           labId: exists.labId,
+          medicalStoreId: medicalStoreProfile?._id || exists.medicalStoreId,
           specialization: doctorProfile?.specialization,
         },
       });
