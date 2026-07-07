@@ -26,15 +26,19 @@ app.use(express.json({ limit: "10kb" }));
 app.use(express.urlencoded({ extended: true, limit: "10kb" }));
 
 // CORS
-app.use(
-  cors({
-    origin: [
+const allowedOrigins = process.env.FRONTEND_URLS
+  ? process.env.FRONTEND_URLS.split(",")
+  : [
       "http://localhost:5173",
       "http://127.0.0.1:5173",
       "http://localhost:3000",
       "http://127.0.0.1:3000",
       "https://medicore-vijay-dinodia.onrender.com",
-    ],
+    ];
+
+app.use(
+  cors({
+    origin: allowedOrigins,
     credentials: true,
   })
 );
@@ -45,8 +49,12 @@ app.use(globalLimiter);
 // MongoDB Connection
 mongoose
   .connect(process.env.MONGODB_URL)
-  .then(() => console.log("Database Connected"))
-  .catch((err) => console.log(err));
+  .then(function () {
+    console.log("Database Connected");
+  })
+  .catch(function (err) {
+    console.log(err);
+  });
 
 // Routes
 const userRoute = require("./routes/userRoute");
