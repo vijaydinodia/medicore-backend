@@ -39,6 +39,20 @@ function applySecurity(app) {
   app.use(hpp());
 
   // ── NoSQL Injection Sanitization ───────────────────────────
+  // Express 5 makes req.query a read-only getter, which causes mongoSanitize to crash.
+  // We redefine req.query as a writable property before sanitizing.
+  app.use((req, res, next) => {
+    if (req.query) {
+      Object.defineProperty(req, "query", {
+        value: { ...req.query },
+        writable: true,
+        configurable: true,
+        enumerable: true,
+      });
+    }
+    next();
+  });
+
   // Strips $ and . from req.body, req.query, req.params
   app.use(
     mongoSanitize({
