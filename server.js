@@ -4,43 +4,106 @@ const cors = require("cors");
 const morgan = require("morgan");
 require("dotenv").config();
 
+const { applySecurity, globalErrorHandler } = require("./middleware/security");
+const {
+  globalLimiter,
+  authLimiter,
+  apiLimiter,
+} = require("./middleware/rateLimiter");
+
 const app = express();
 
-app.use(morgan("dev"));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.set("trust proxy", 1);
+
+// Security
+applySecurity(app);
+
+// Logger
+app.use(morgan("short"));
+
+// Body Parser
+app.use(express.json({ limit: "10kb" }));
+app.use(express.urlencoded({ extended: true, limit: "10kb" }));
 
 // CORS
 app.use(
   cors({
     origin: [
       "http://localhost:5173",
+      "http://127.0.0.1:5173",
+      "http://localhost:3000",
+      "http://127.0.0.1:3000",
       "https://medicore-vijay-dinodia.onrender.com",
     ],
     credentials: true,
   })
 );
 
-// MongoDB
+// Rate Limiter
+app.use(globalLimiter);
+
+// MongoDB Connection
 mongoose
   .connect(process.env.MONGODB_URL)
   .then(() => console.log("Database Connected"))
   .catch((err) => console.log(err));
 
 // Routes
-app.use("/hospital", require("./routes/hospitalRoute"));
-app.use("/user", require("./routes/userRoute"));
-// Add your other routes here...
+const userRoute = require("./routes/userRoute");
+const locationRoute = require("./routes/locationRoute");
+const hospitalRoute = require("./routes/hospitalRoute");
+const superAdminRoute = require("./routes/superAdminRoute");
+const departmentRoute = require("./routes/departmentRoute");
+const subDepartmentRoute = require("./routes/subDepartmentRoute");
+const doctorRoute = require("./routes/doctorRoute");
+const appointmentRoute = require("./routes/appointmentRoute");
+const medicineRoute = require("./routes/medicineRoute");
+const medicalRoute = require("./routes/medicalRoute");
+const labRoute = require("./routes/labRoute");
+const testRoute = require("./routes/testRoute");
+const reportRoute = require("./routes/reportRoute");
+const statReportRoute = require("./routes/statReportRoute");
+const receptionistRoute = require("./routes/receptionistRoute");
 
-// Root Route
+app.use("/user", authLimiter, userRoute);
+
+app.use("/location", apiLimiter, locationRoute);
+app.use("/hospital", apiLimiter, hospitalRoute);
+app.use("/super-admin", apiLimiter, superAdminRoute);
+app.use("/department", apiLimiter, departmentRoute);
+app.use("/sub-department", apiLimiter, subDepartmentRoute);
+app.use("/doctor", apiLimiter, doctorRoute);
+app.use("/appointment", apiLimiter, appointmentRoute);
+app.use("/medicine", apiLimiter, medicineRoute);
+app.use("/medical", apiLimiter, medicalRoute);
+app.use("/lab", apiLimiter, labRoute);
+app.use("/test", apiLimiter, testRoute);
+app.use("/report", apiLimiter, reportRoute);
+app.use("/stat-report", apiLimiter, statReportRoute);
+app.use("/receptionist", apiLimiter, receptionistRoute);
+
+// Default Route
 app.get("/", (req, res) => {
-  res.send("Server Running");
+  res.json({
+    success: true,
+    message: "Server is Running",
+  });
 });
 
-// 404
+// 404 Route
 app.use((req, res) => {
-  res.status(404).json({ message: "Route not found" });
+  res.status(404).json({
+    success: false,
+    message: "Route not found",
+  });
 });
 
+// Global Error Handler
+app.use(globalErrorHandler);
+
+// Start Server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
