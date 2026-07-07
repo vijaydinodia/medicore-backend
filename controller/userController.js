@@ -1,6 +1,7 @@
 const User = require("../model/userModel");
 const Doctor = require("../model/doctorModel");
 const MedicalStore = require("../model/medicalStoreModel");
+const Receptionist = require("../model/receptionistModel");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const moment = require("moment");
@@ -49,7 +50,7 @@ exports.signup = async (req, res) => {
       age,
       gender,
       password: hashPassword,
-      role: role || "user",
+      role: ["user", "hospital"].includes(role) ? role : "user",
     });
 
     // send mail
@@ -113,6 +114,13 @@ exports.login = async (req, res) => {
           : await MedicalStore.findOne({ email: exists.email });
       }
 
+      let receptionistProfile = null;
+      if (exists.role === "receptionist") {
+        receptionistProfile = exists.receptionistId
+          ? await Receptionist.findById(exists.receptionistId)
+          : await Receptionist.findOne({ email: exists.email });
+      }
+
       const token = jwt.sign(
         {
           _id: exists._id,
@@ -129,21 +137,23 @@ exports.login = async (req, res) => {
         token,
         user: {
           _id: exists._id,
-          name: doctorProfile?.doctorName || medicalStoreProfile?.medicalName || exists.name,
+          name: receptionistProfile?.receptionistName || doctorProfile?.doctorName || medicalStoreProfile?.medicalName || exists.name,
           doctorName: doctorProfile?.doctorName,
           medicalName: medicalStoreProfile?.medicalName,
+          receptionistName: receptionistProfile?.receptionistName,
           email: exists.email,
           phone: exists.phone,
           age: exists.age,
           gender: exists.gender,
-          profileImage: doctorProfile?.profileImage || exists.profileImage,
+          profileImage: receptionistProfile?.profileImage || doctorProfile?.profileImage || exists.profileImage,
           role: exists.role,
-          status: doctorProfile?.status || medicalStoreProfile?.status || exists.status,
-          hospitalId: exists.hospitalId,
+          status: receptionistProfile?.status || doctorProfile?.status || medicalStoreProfile?.status || exists.status,
+          hospitalId: exists.hospitalId || receptionistProfile?.hospitalId,
           departmentId: doctorProfile?.departmentId || exists.departmentId,
           doctorId: doctorProfile?._id || exists.doctorId,
           labId: exists.labId,
           medicalStoreId: medicalStoreProfile?._id || exists.medicalStoreId,
+          receptionistId: receptionistProfile?._id || exists.receptionistId,
           specialization: doctorProfile?.specialization,
         },
       });

@@ -1,11 +1,27 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
+const morgan = require("morgan");
 require("dotenv").config();
+
+const { applySecurity, globalErrorHandler } = require("./middleware/security");
+const {
+  globalLimiter,
+  authLimiter,
+  apiLimiter,
+} = require("./middleware/rateLimiter");
 
 const app = express();
 
-app.use(express.json());
+app.set("trust proxy", 1);
+
+applySecurity(app);
+
+app.use(morgan("short"));
+
+app.use(express.json({ limit: "10kb" }));
+app.use(express.urlencoded({ extended: true, limit: "10kb" }));
+
 
 const defaultOrigins = [
   "http://localhost:5173",
@@ -23,23 +39,20 @@ const allowedOrigins = [...defaultOrigins, ...envOrigins];
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(new Error("Not allowed by CORS"));
-    },
+    origin: true,
     credentials: true,
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
 
+app.use(globalLimiter);
+
 mongoose
   .connect(process.env.MONGODB_URL)
   .then(() => console.log("Db is connected"))
   .catch((err) => console.log(err));
+
 
 const userRoute = require("./routes/userRoute");
 const locationRoute = require("./routes/locationRoute");
@@ -55,21 +68,37 @@ const labRoute = require("./routes/labRoute");
 const testRoute = require("./routes/testRoute");
 const reportRoute = require("./routes/reportRoute");
 const statReportRoute = require("./routes/statReportRoute");
+const receptionistRoute = require("./routes/receptionistRoute");
 
-app.use("/user", userRoute);
-app.use("/location", locationRoute);
-app.use("/hospital", hospitalRoute);
-app.use("/super-admin", superAdminRoute);
-app.use("/department", departmentRoute);
-app.use("/sub-department", subDepartmentRoute);
-app.use("/doctor", doctorRoute);
-app.use("/appointment", appointmentRoute);
-app.use("/medicine", medicineRoute);
-app.use("/medical", medicalRoute);
-app.use("/lab", labRoute);
-app.use("/test", testRoute);
-app.use("/report", reportRoute);
-app.use("/stat-report", statReportRoute);
+
+app.use("/user", authLimiter, userRoute);
+
+
+app.use("/location", apiLimiter, locationRoute);
+app.use("/hospital", apiLimiter, hospitalRoute);
+app.use("/super-admin", apiLimiter, superAdminRoute);
+app.use("/department", apiLimiter, departmentRoute);
+app.use("/sub-department", apiLimiter, subDepartmentRoute);
+app.use("/doctor", apiLimiter, doctorRoute);
+app.use("/appointment", apiLimiter, appointmentRoute);
+app.use("/medicine", apiLimiter, medicineRoute);
+app.use("/medical", apiLimiter, medicalRoute);
+app.use("/lab", apiLimiter, labRoute);
+app.use("/test", apiLimiter, testRoute);
+app.use("/report", apiLimiter, reportRoute);
+app.use("/stat-report", apiLimiter, statReportRoute);
+app.use("/receptionist", apiLimiter, receptionistRoute);
+
+
+app.use((_req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "Route not found",
+  });
+});
+
+
+app.use(globalErrorHandler);
 
 const port = process.env.PORT || 5000;
 

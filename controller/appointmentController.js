@@ -90,7 +90,7 @@ const getDoctorIdFromRequest = async (req) => {
 };
 
 const getHospitalIdFromRequest = async (req) => {
-  if (req.user.role !== "hospital" && req.user.role !== "admin") {
+  if (req.user.role !== "hospital" && req.user.role !== "admin" && req.user.role !== "receptionist") {
     return null;
   }
 
@@ -473,7 +473,7 @@ exports.cancelAppointment = async (req, res) => {
 //create appointment
 exports.createAppointment = async (req, res) => {
   try {
-    const { doctorId, hospitalId, date, timeSlot } = req.body;
+    const { doctorId, hospitalId, date, timeSlot, paymentStatus } = req.body;
     const userId = req.user._id || req.user.id;
 
     // validation
@@ -555,6 +555,7 @@ exports.createAppointment = async (req, res) => {
       hospitalId,
       date: appointmentDate,
       timeSlot: timeSlot.trim(),
+      paymentStatus: paymentStatus || "pending",
     });
 
     hospital.appointments = hospital.appointments || [];
@@ -591,6 +592,206 @@ exports.createAppointment = async (req, res) => {
       success: true,
       message: "Appointment booked successfully",
       data: appointment,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: err.message,
+    });
+  }
+};
+
+// get all hospital appointments for receptionist/admin
+exports.getHospitalAppointments = async (req, res) => {
+  try {
+    const hospitalId = await getHospitalIdFromRequest(req);
+
+    if (!hospitalId) {
+      return res.status(403).json({
+        success: false,
+        message: "Only hospital admin or receptionist can view hospital appointments",
+      });
+    }
+
+    const appointments = await Appointment.find({ hospitalId })
+      .populate("userId", "-password -otp -otpExpire")
+      .populate("doctorId")
+      .populate("hospitalId")
+      .sort({ date: -1, timeSlot: 1 });
+
+    const appointmentsWithMedicine = await attachMedicineToAppointments(appointments);
+
+    return res.status(200).json({
+      success: true,
+      count: appointmentsWithMedicine.length,
+      data: appointmentsWithMedicine,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: err.message,
+    });
+  }
+};
+
+// verify appointment payment status by receptionist
+exports.verifyAppointment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { paymentStatus } = req.body;
+
+    if (req.user.role !== "receptionist" && req.user.role !== "hospital" && req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Only receptionist or hospital admin can verify appointments",
+      });
+    }
+
+    const appointment = await Appointment.findById(id);
+
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: "Appointment not found",
+      });
+    }
+
+    // Update paymentStatus if provided
+    if (paymentStatus) {
+      appointment.paymentStatus = paymentStatus;
+    }
+
+    // Auto update status based on payment verification
+    if (appointment.paymentStatus === "done") {
+      appointment.status = "confirmed";
+    } else {
+      appointment.status = "pending";
+    }
+
+    await appointment.save();
+
+    const updatedAppointment = await appointment.populate([
+      { path: "userId", select: "-password -otp -otpExpire" },
+      { path: "doctorId" },
+      { path: "hospitalId" },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: appointment.paymentStatus === "done" 
+        ? "Appointment verified and confirmed successfully" 
+        : "Appointment verified and remains in pending process",
+      data: updatedAppointment,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: err.message,
+    });
+  }
+};
+
+// get all medicines with tests for hospital reception to collect fees
+exports.getHospitalTestsToCollectFees = async (req, res) => {
+  try {
+    const hospitalId = await getHospitalIdFromRequest(req);
+
+    if (!hospitalId) {
+      return res.status(403).json({
+        success: false,
+        message: "Only hospital admin or receptionist can view test fees",
+      });
+    }
+
+    // Find appointments of this hospital
+    const appointments = await Appointment.find({ hospitalId }).select("_id");
+    const appointmentIds = appointments.map((app) => app._id);
+
+    // Find prescriptions with tests
+    const medicines = await Medicine.find({ appointmentId: { $in: appointmentIds } })
+      .populate({
+        path: "appointmentId",
+        populate: [
+          { path: "userId", select: "-password -otp -otpExpire" },
+          { path: "doctorId" },
+          { path: "hospitalId" },
+        ],
+      })
+      .populate("tests.testId")
+      .populate("tests.labId")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: medicines.length,
+      data: medicines,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: err.message,
+    });
+  }
+};
+
+// collect lab test fee
+exports.collectTestFee = async (req, res) => {
+  try {
+    const { medicineId, testId } = req.body;
+
+    if (req.user.role !== "receptionist" && req.user.role !== "hospital" && req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Only receptionist or hospital admin can collect test fees",
+      });
+    }
+
+    const medicine = await Medicine.findById(medicineId);
+    if (!medicine) {
+      return res.status(404).json({
+        success: false,
+        message: "Prescription record not found",
+      });
+    }
+
+    let testFound = false;
+    for (const test of medicine.tests) {
+      if (String(test.testId?._id || test.testId || test._id) === String(testId)) {
+        test.paymentStatus = "done";
+        testFound = true;
+        break;
+      }
+    }
+
+    if (!testFound) {
+      return res.status(404).json({
+        success: false,
+        message: "Test not found in prescription record",
+      });
+    }
+
+    await medicine.save();
+
+    const updatedMedicine = await Medicine.findById(medicineId)
+      .populate({
+        path: "appointmentId",
+        populate: [
+          { path: "userId", select: "-password -otp -otpExpire" },
+          { path: "doctorId" },
+          { path: "hospitalId" },
+        ],
+      })
+      .populate("tests.testId")
+      .populate("tests.labId");
+
+    return res.status(200).json({
+      success: true,
+      message: "Test fee collected successfully",
+      data: updatedMedicine,
     });
   } catch (err) {
     return res.status(500).json({

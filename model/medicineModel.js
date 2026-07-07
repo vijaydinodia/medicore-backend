@@ -119,6 +119,12 @@ const medicineSchema = new mongoose.Schema(
           enum: ["pending", "completed"],
           default: "pending",
         },
+
+        paymentStatus: {
+          type: String,
+          enum: ["pending", "done"],
+          default: "pending",
+        },
       },
     ],
 
