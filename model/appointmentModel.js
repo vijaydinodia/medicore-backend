@@ -42,6 +42,23 @@ const appointmentSchema = new mongoose.Schema(
       default: "pending",
     },
 
+    paymentMethod: {
+      type: String,
+      enum: ["cash", "upi", "card", ""],
+      default: "",
+    },
+
+    verifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
+      default: null,
+    },
+
+    paymentAmount: {
+      type: Number,
+      default: 0,
+    },
+
     isReached: {
       type: Boolean,
       default: false,

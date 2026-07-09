@@ -13,12 +13,14 @@ const {
   verifyAppointment,
   getHospitalTestsToCollectFees,
   collectTestFee,
+  getHospitalOverviewStats,
 } = require("../controller/appointmentController");
 const { auth } = require("../middleware/auth");
 
 router.get("/myAppointments", auth, getMyAppointments);
 router.get("/doctorAppointments", auth, getDoctorAppointments);
 router.get("/hospitalStats", auth, getHospitalAppointmentStats);
+router.get("/hospitalOverviewStats", auth, getHospitalOverviewStats);
 router.get("/hospitalAppointments", auth, getHospitalAppointments);
 router.post("/createAppointment", auth, createAppointment);
 router.patch("/cancelAppointment/:id", auth, cancelAppointment);

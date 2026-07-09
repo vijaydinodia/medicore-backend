@@ -4,6 +4,7 @@ const Hospital = require("../model/hospitalModel");
 const Medicine = require("../model/medicineModel");
 const Report = require("../model/reportModel");
 const User = require("../model/userModel");
+const Test = require("../model/testModel");
 const mailSender = require("../utils/mailSender");
 const appointmentBookedTemplate = require("../templates/appointmentBookedTemplate");
 
@@ -640,7 +641,7 @@ exports.getHospitalAppointments = async (req, res) => {
 exports.verifyAppointment = async (req, res) => {
   try {
     const { id } = req.params;
-    const { paymentStatus } = req.body;
+    const { paymentStatus, paymentMethod } = req.body;
 
     if (req.user.role !== "receptionist" && req.user.role !== "hospital" && req.user.role !== "admin") {
       return res.status(403).json({
@@ -666,8 +667,17 @@ exports.verifyAppointment = async (req, res) => {
     // Auto update status based on payment verification
     if (appointment.paymentStatus === "done") {
       appointment.status = "confirmed";
+      appointment.paymentMethod = paymentMethod || "cash";
+      appointment.verifiedBy = req.user._id || req.user.id;
+      
+      // Get consultation fee
+      const doctor = await Doctor.findById(appointment.doctorId);
+      appointment.paymentAmount = doctor ? doctor.consultationFee : 0;
     } else {
       appointment.status = "pending";
+      appointment.paymentMethod = "";
+      appointment.verifiedBy = null;
+      appointment.paymentAmount = 0;
     }
 
     await appointment.save();
@@ -741,7 +751,7 @@ exports.getHospitalTestsToCollectFees = async (req, res) => {
 // collect lab test fee
 exports.collectTestFee = async (req, res) => {
   try {
-    const { medicineId, testId } = req.body;
+    const { medicineId, testId, paymentMethod } = req.body;
 
     if (req.user.role !== "receptionist" && req.user.role !== "hospital" && req.user.role !== "admin") {
       return res.status(403).json({
@@ -758,10 +768,17 @@ exports.collectTestFee = async (req, res) => {
       });
     }
 
+    // Query test model to find amount
+    const testDoc = await Test.findById(testId);
+    const amount = testDoc ? testDoc.amount : 0;
+
     let testFound = false;
     for (const test of medicine.tests) {
       if (String(test.testId?._id || test.testId || test._id) === String(testId)) {
         test.paymentStatus = "done";
+        test.paymentMethod = paymentMethod || "cash";
+        test.verifiedBy = req.user._id || req.user.id;
+        test.paymentAmount = amount;
         testFound = true;
         break;
       }
@@ -792,6 +809,173 @@ exports.collectTestFee = async (req, res) => {
       success: true,
       message: "Test fee collected successfully",
       data: updatedMedicine,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: err.message,
+    });
+  }
+};
+
+// Get overall revenue stats for hospital (for charts & dashboard)
+exports.getHospitalOverviewStats = async (req, res) => {
+  try {
+    const hospitalId = await getHospitalIdFromRequest(req);
+
+    if (!hospitalId) {
+      return res.status(403).json({
+        success: false,
+        message: "Only hospital admin or receptionist can view dashboard stats",
+      });
+    }
+
+    // 1. Fetch receptionists to build baseline names mapping
+    const receptionistUsers = await User.find({ hospitalId, role: "receptionist" })
+      .select("name _id")
+      .lean();
+
+    const receptionistRevenue = {};
+    for (const rx of receptionistUsers) {
+      receptionistRevenue[String(rx._id)] = {
+        receptionistId: rx._id,
+        name: rx.name,
+        amount: 0,
+      };
+    }
+
+    // 2. Fetch all appointments (sorted by date desc, then timeSlot)
+    const appointments = await Appointment.find({ hospitalId })
+      .populate("doctorId", "doctorName consultationFee")
+      .populate("userId", "name phone")
+      .populate("verifiedBy", "name")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // 3. Fetch all medicines and their test fees
+    const appointmentIds = appointments.map((app) => app._id);
+    const medicines = await Medicine.find({ appointmentId: { $in: appointmentIds } })
+      .populate("tests.testId", "testName amount")
+      .populate("tests.verifiedBy", "name")
+      .lean();
+
+    // Stats calculations
+    let totalConsultationRevenue = 0;
+    let totalLabRevenue = 0;
+    const paymentMethods = { cash: 0, upi: 0, card: 0 };
+    const dailyMap = {};
+
+    // Helper functions for fallback amount
+    const getAppAmount = (app) => {
+      if (app.paymentAmount !== undefined && app.paymentAmount > 0) return app.paymentAmount;
+      return app.doctorId?.consultationFee || 0;
+    };
+
+    const getTestAmount = (test) => {
+      if (test.paymentAmount !== undefined && test.paymentAmount > 0) return test.paymentAmount;
+      return test.testId?.amount || 0;
+    };
+
+    // Aggregate appointments
+    for (const app of appointments) {
+      if (app.paymentStatus === "done") {
+        const amt = getAppAmount(app);
+        totalConsultationRevenue += amt;
+
+        // Payment Method breakdown
+        const method = (app.paymentMethod || "cash").toLowerCase();
+        if (paymentMethods[method] !== undefined) {
+          paymentMethods[method] += amt;
+        } else {
+          paymentMethods.cash += amt;
+        }
+
+        // Receptionist breakdown
+        if (app.verifiedBy) {
+          const rId = String(app.verifiedBy._id || app.verifiedBy);
+          if (!receptionistRevenue[rId]) {
+            receptionistRevenue[rId] = { receptionistId: rId, name: app.verifiedBy.name || "Staff", amount: 0 };
+          }
+          receptionistRevenue[rId].amount += amt;
+        }
+
+        // Daily trend
+        const dateObj = app.createdAt || app.date;
+        const dateStr = new Date(dateObj).toISOString().slice(0, 10);
+        if (!dailyMap[dateStr]) {
+          dailyMap[dateStr] = { date: dateStr, consultation: 0, lab: 0, total: 0 };
+        }
+        dailyMap[dateStr].consultation += amt;
+        dailyMap[dateStr].total += amt;
+      }
+    }
+
+    // Aggregate lab tests
+    for (const med of medicines) {
+      if (med.tests && med.tests.length > 0) {
+        for (const test of med.tests) {
+          if (test.paymentStatus === "done") {
+            const amt = getTestAmount(test);
+            totalLabRevenue += amt;
+
+            // Payment Method breakdown
+            const method = (test.paymentMethod || "cash").toLowerCase();
+            if (paymentMethods[method] !== undefined) {
+              paymentMethods[method] += amt;
+            } else {
+              paymentMethods.cash += amt;
+            }
+
+            // Receptionist breakdown
+            if (test.verifiedBy) {
+              const rId = String(test.verifiedBy._id || test.verifiedBy);
+              if (!receptionistRevenue[rId]) {
+                receptionistRevenue[rId] = { receptionistId: rId, name: test.verifiedBy.name || "Staff", amount: 0 };
+              }
+              receptionistRevenue[rId].amount += amt;
+            }
+
+            // Daily trend
+            const dateObj = test.updatedAt || med.createdAt;
+            const dateStr = new Date(dateObj).toISOString().slice(0, 10);
+            if (!dailyMap[dateStr]) {
+              dailyMap[dateStr] = { date: dateStr, consultation: 0, lab: 0, total: 0 };
+            }
+            dailyMap[dateStr].lab += amt;
+            dailyMap[dateStr].total += amt;
+          }
+        }
+      }
+    }
+
+    // Process daily trend to sort and fill empty days in last 30 days
+    const dailyTrend = [];
+    const today = new Date();
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const dateStr = d.toISOString().slice(0, 10);
+      
+      const dayData = dailyMap[dateStr] || { date: dateStr, consultation: 0, lab: 0, total: 0 };
+      dailyTrend.push(dayData);
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalRevenue: totalConsultationRevenue + totalLabRevenue,
+        consultationRevenue: totalConsultationRevenue,
+        labRevenue: totalLabRevenue,
+        paymentMethods,
+        receptionistBreakdown: Object.values(receptionistRevenue),
+        dailyTrend,
+        appointmentCount: appointments.length,
+        pendingAppointments: appointments.filter(a => a.status === "pending").length,
+        confirmedAppointments: appointments.filter(a => a.status === "confirmed").length,
+        completedAppointments: appointments.filter(a => a.status === "completed").length,
+        recentAppointments: appointments.slice(0, 5),
+      },
     });
   } catch (err) {
     return res.status(500).json({

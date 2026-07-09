@@ -125,6 +125,23 @@ const medicineSchema = new mongoose.Schema(
           enum: ["pending", "done"],
           default: "pending",
         },
+
+        paymentMethod: {
+          type: String,
+          enum: ["cash", "upi", "card", ""],
+          default: "",
+        },
+
+        verifiedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "user",
+          default: null,
+        },
+
+        paymentAmount: {
+          type: Number,
+          default: 0,
+        },
       },
     ],
 
