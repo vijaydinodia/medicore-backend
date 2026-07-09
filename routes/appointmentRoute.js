@@ -14,6 +14,8 @@ const {
   getHospitalTestsToCollectFees,
   collectTestFee,
   getHospitalOverviewStats,
+  createRazorpayOrder,
+  verifyRazorpayPayment,
 } = require("../controller/appointmentController");
 const { auth } = require("../middleware/auth");
 
@@ -29,5 +31,7 @@ router.patch("/shareMedicalHistory/:id", auth, updateShareMedicalHistory);
 router.patch("/verifyAppointment/:id", auth, verifyAppointment);
 router.get("/hospitalTestsToCollectFees", auth, getHospitalTestsToCollectFees);
 router.post("/collectTestFee", auth, collectTestFee);
+router.post("/createRazorpayOrder", auth, createRazorpayOrder);
+router.post("/verifyRazorpayPayment", auth, verifyRazorpayPayment);
 
 module.exports = router;

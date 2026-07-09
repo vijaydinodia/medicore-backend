@@ -7,6 +7,13 @@ const User = require("../model/userModel");
 const Test = require("../model/testModel");
 const mailSender = require("../utils/mailSender");
 const appointmentBookedTemplate = require("../templates/appointmentBookedTemplate");
+const Razorpay = require("razorpay");
+const crypto = require("crypto");
+
+const razorpayInstance = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_SznPBobc60r9lz",
+  key_secret: process.env.RAZORPAY_KEY_SECRET || "h7tKPvJaCVuC3c5XRBeVRHw6",
+});
 
 const getMinutesFromClock = (value) => {
   if (!value || typeof value !== "string") return null;
@@ -982,6 +989,155 @@ exports.getHospitalOverviewStats = async (req, res) => {
       success: false,
       message: "Server Error",
       error: err.message,
+    });
+  }
+};
+
+// Create Razorpay Order
+exports.createRazorpayOrder = async (req, res) => {
+  try {
+    const { appointmentId, type, medicineId, testId } = req.body;
+
+    let amount = 0;
+    let receipt = "";
+
+    if (type === "test") {
+      if (!medicineId || !testId) {
+        return res.status(400).json({ success: false, message: "medicineId and testId are required for test payment" });
+      }
+      const medicine = await Medicine.findById(medicineId).populate("tests.testId");
+      if (!medicine) {
+        return res.status(404).json({ success: false, message: "Prescription record not found" });
+      }
+      const testItem = medicine.tests.find(t => String(t.testId?._id || t.testId || t._id) === String(testId));
+      if (!testItem) {
+        return res.status(404).json({ success: false, message: "Test not found in prescription" });
+      }
+      amount = testItem.testId?.amount || 0;
+      receipt = `rcpt_test_${testId.substring(testId.length - 8)}`;
+    } else {
+      if (!appointmentId) {
+        return res.status(400).json({ success: false, message: "appointmentId is required" });
+      }
+      const appointment = await Appointment.findById(appointmentId).populate("doctorId");
+      if (!appointment) {
+        return res.status(404).json({ success: false, message: "Appointment not found" });
+      }
+      amount = appointment.doctorId?.consultationFee || 0;
+      receipt = `rcpt_apt_${appointmentId.substring(appointmentId.length - 8)}`;
+    }
+
+    if (amount <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid payment amount" });
+    }
+
+    const options = {
+      amount: Math.round(amount * 100), // amount in paisa
+      currency: "INR",
+      receipt,
+    };
+
+    const order = await razorpayInstance.orders.create(options);
+
+    return res.status(200).json({
+      success: true,
+      keyId: process.env.RAZORPAY_KEY_ID || "rzp_test_SznPBobc60r9lz",
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Server Error creating payment order",
+      error: error.message,
+    });
+  }
+};
+
+// Verify Razorpay Payment Signature
+exports.verifyRazorpayPayment = async (req, res) => {
+  try {
+    const {
+      appointmentId,
+      type,
+      medicineId,
+      testId,
+      razorpayOrderId,
+      razorpayPaymentId,
+      razorpaySignature,
+    } = req.body;
+
+    if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing Razorpay verification parameters",
+      });
+    }
+
+    // Verify signature
+    const hmac = crypto.createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || "h7tKPvJaCVuC3c5XRBeVRHw6");
+    hmac.update(razorpayOrderId + "|" + razorpayPaymentId);
+    const generatedSignature = hmac.digest("hex");
+
+    if (generatedSignature !== razorpaySignature) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment verification failed. Invalid signature.",
+      });
+    }
+
+    // Process and mark as paid in database
+    if (type === "test") {
+      const medicine = await Medicine.findById(medicineId);
+      if (!medicine) {
+        return res.status(404).json({ success: false, message: "Prescription not found" });
+      }
+
+      const testDoc = await Test.findById(testId);
+      const amount = testDoc ? testDoc.amount : 0;
+
+      let testFound = false;
+      for (const test of medicine.tests) {
+        if (String(test.testId?._id || test.testId || test._id) === String(testId)) {
+          test.paymentStatus = "done";
+          test.paymentMethod = "upi";
+          test.paymentAmount = amount;
+          testFound = true;
+          break;
+        }
+      }
+
+      if (!testFound) {
+        return res.status(404).json({ success: false, message: "Test not found in prescription" });
+      }
+
+      await medicine.save();
+    } else {
+      const appointment = await Appointment.findById(appointmentId);
+      if (!appointment) {
+        return res.status(404).json({ success: false, message: "Appointment not found" });
+      }
+
+      const doctor = await Doctor.findById(appointment.doctorId);
+
+      appointment.paymentStatus = "done";
+      appointment.paymentMethod = "upi";
+      appointment.paymentAmount = doctor ? doctor.consultationFee : 0;
+      appointment.status = "confirmed";
+
+      await appointment.save();
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment processed and confirmed successfully",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Server Error verifying payment",
+      error: error.message,
     });
   }
 };
