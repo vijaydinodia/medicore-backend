@@ -1,9 +1,5 @@
 const jwt = require("jsonwebtoken");
 
-/**
- * Verifies the JWT from the Authorization header and attaches
- * the decoded payload to `req.user`.
- */
 exports.auth = (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;

@@ -27,7 +27,7 @@ app.use(express.urlencoded({ extended: true, limit: "10kb" }));
 
 // CORS
 const allowedOrigins = process.env.FRONTEND_URLS
-  ? process.env.FRONTEND_URLS.split(",")
+  ? process.env.FRONTEND_URLS.split(",").map((o) => o.trim())
   : [
       "http://localhost:5173",
       "http://127.0.0.1:5173",
@@ -36,12 +36,24 @@ const allowedOrigins = process.env.FRONTEND_URLS
       "https://medicore-vijay-dinodia.onrender.com",
     ];
 
-app.use(
-  cors({
-    origin: allowedOrigins,
-    credentials: true,
-  })
-);
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
+// Handle preflight for ALL routes BEFORE rate limiter (Express 5 wildcard syntax)
+app.options("/{*path}", cors(corsOptions));
+
+app.use(cors(corsOptions));
 
 // Rate Limiter
 app.use(globalLimiter);
@@ -89,6 +101,28 @@ app.use("/test", apiLimiter, testRoute);
 app.use("/report", apiLimiter, reportRoute);
 app.use("/stat-report", apiLimiter, statReportRoute);
 app.use("/receptionist", apiLimiter, receptionistRoute);
+
+// Health Route
+app.get("/health", (req, res) => {
+  const dbState = mongoose.connection.readyState;
+  const dbStatusMap = { 0: "disconnected", 1: "connected", 2: "connecting", 3: "disconnecting" };
+
+  res.status(200).json({
+    success: true,
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    uptime: `${Math.floor(process.uptime())}s`,
+    database: {
+      status: dbStatusMap[dbState] || "unknown",
+      connected: dbState === 1,
+    },
+    memory: {
+      heapUsed: `${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB`,
+      heapTotal: `${(process.memoryUsage().heapTotal / 1024 / 1024).toFixed(2)} MB`,
+      rss: `${(process.memoryUsage().rss / 1024 / 1024).toFixed(2)} MB`,
+    },
+  });
+});
 
 // Default Route
 app.get("/", (req, res) => {
