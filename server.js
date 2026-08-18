@@ -43,6 +43,8 @@ const corsOptions = {
     if (
       !origin ||
       allowedOrigins.includes(origin) ||
+      allowedOrigins.includes(origin.replace(/\/$/, "")) ||
+      /\.onrender\.com$/.test(origin.replace(/^https?:\/\//, "")) ||
       /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
     ) {
       callback(null, true);
