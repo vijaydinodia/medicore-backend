@@ -26,40 +26,15 @@ app.use(morgan("short"));
 app.use(express.json({ limit: "10kb" }));
 app.use(express.urlencoded({ extended: true, limit: "10kb" }));
 
-// CORS
-const allowedOrigins = process.env.FRONTEND_URLS
-  ? process.env.FRONTEND_URLS.split(",").map((o) => o.trim())
-  : [
-      "http://localhost:5173",
-      "http://127.0.0.1:5173",
-      "http://localhost:3000",
-      "http://127.0.0.1:3000",
-      "https://medicore-vijay-dinodia.onrender.com",
-    ];
-
+// CORS - Allow All Origins
 const corsOptions = {
-  origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, Postman)
-    if (
-      !origin ||
-      allowedOrigins.includes(origin) ||
-      allowedOrigins.includes(origin.replace(/\/$/, "")) ||
-      /\.onrender\.com$/.test(origin.replace(/^https?:\/\//, "")) ||
-      /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
-    ) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
+  origin: true,
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
-// Handle preflight for ALL routes BEFORE rate limiter (Express 5 wildcard syntax)
-app.options("/{*path}", cors(corsOptions));
-
+app.options("*", cors(corsOptions));
 app.use(cors(corsOptions));
 
 // Rate Limiter
