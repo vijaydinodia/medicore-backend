@@ -1,4 +1,3 @@
-const nodemailer = require("nodemailer");
 const https = require("https");
 
 const parseFromEmail = (rawFrom) => {
@@ -14,70 +13,15 @@ const parseFromEmail = (rawFrom) => {
   return { name: "MediCore Hospital Management System", email: rawFrom.trim() };
 };
 
-const sendViaSendGridAPI = (toEmail, title, body) => {
-  return new Promise((resolve, reject) => {
-    const apiKey = process.env.SENDGRID_API_KEY;
-    const { name: fromName, email: fromEmail } = parseFromEmail(process.env.SENDGRID_FROM_EMAIL);
-
-    const postData = JSON.stringify({
-      personalizations: [
-        {
-          to: [{ email: toEmail }],
-        },
-      ],
-      from: {
-        email: fromEmail,
-        name: fromName,
-      },
-      subject: title,
-      content: [
-        {
-          type: "text/html",
-          value: body,
-        },
-      ],
-    });
-
-    const options = {
-      hostname: "api.sendgrid.com",
-      port: 443,
-      path: "/v3/mail/send",
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(postData),
-      },
-    };
-
-    const req = https.request(options, (res) => {
-      let responseData = "";
-      res.on("data", (chunk) => {
-        responseData += chunk;
-      });
-      res.on("end", () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve({ success: true, messageId: res.headers["x-message-id"] || "sendgrid-api" });
-        } else {
-          reject(new Error(`SendGrid API failed (${res.statusCode}): ${responseData}`));
-        }
-      });
-    });
-
-    req.on("error", (err) => {
-      reject(err);
-    });
-
-    req.write(postData);
-    req.end();
-  });
-};
-
 const sendViaBrevoAPI = (toEmail, title, body) => {
   return new Promise((resolve, reject) => {
-    const apiKey = process.env.SMTP_KEY;
+    const apiKey = process.env.BREVO_API_KEY || process.env.SMTP_KEY;
+    if (!apiKey) {
+      return reject(new Error("BREVO_API_KEY / SMTP_KEY is not configured in environment variables."));
+    }
+
     const { name: fromName, email: fromEmail } = parseFromEmail(
-      process.env.SENDGRID_FROM_EMAIL || process.env.EMAIL_USER
+      process.env.BREVO_FROM_EMAIL || process.env.SENDGRID_FROM_EMAIL || process.env.EMAIL_USER
     );
 
     const postData = JSON.stringify({
@@ -114,7 +58,12 @@ const sendViaBrevoAPI = (toEmail, title, body) => {
       });
       res.on("end", () => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve({ success: true, messageId: responseData });
+          try {
+            const parsed = JSON.parse(responseData);
+            resolve({ success: true, messageId: parsed.messageId || responseData });
+          } catch (e) {
+            resolve({ success: true, messageId: responseData });
+          }
         } else {
           reject(new Error(`Brevo API failed (${res.statusCode}): ${responseData}`));
         }
@@ -131,93 +80,14 @@ const sendViaBrevoAPI = (toEmail, title, body) => {
 };
 
 const mailSender = async (email, title, body) => {
-  const errors = [];
-
-  // Priority 1: SendGrid HTTP API
-  if (process.env.SENDGRID_API_KEY) {
-    try {
-      const result = await sendViaSendGridAPI(email, title, body);
-      console.log("Email sent via SendGrid API to:", email);
-      return result;
-    } catch (sgError) {
-      console.warn("SendGrid API failed, trying fallback:", sgError.message);
-      errors.push(`SendGrid: ${sgError.message}`);
-    }
+  try {
+    const result = await sendViaBrevoAPI(email, title, body);
+    console.log("Email sent via Brevo API to:", email);
+    return result;
+  } catch (error) {
+    console.error("Brevo email delivery failed:", error.message);
+    throw error;
   }
-
-  // Priority 2: Brevo HTTP API (Port 443 - works on Render & Local)
-  if (process.env.SMTP_KEY) {
-    try {
-      const result = await sendViaBrevoAPI(email, title, body);
-      console.log("Email sent via Brevo HTTP API to:", email);
-      return result;
-    } catch (brevoApiError) {
-      console.warn("Brevo API failed, trying fallback:", brevoApiError.message);
-      errors.push(`Brevo API: ${brevoApiError.message}`);
-    }
-  }
-
-  // Priority 3: Brevo / Custom SMTP via Nodemailer
-  if (process.env.SMTP_USER && process.env.SMTP_KEY) {
-    try {
-      const transporter = nodemailer.createTransport({
-        host: "smtp-relay.brevo.com",
-        port: 587,
-        secure: false,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_KEY,
-        },
-      });
-
-      const { name, email: fromEmail } = parseFromEmail(process.env.SENDGRID_FROM_EMAIL);
-      const info = await transporter.sendMail({
-        from: `"${name}" <${fromEmail}>`,
-        to: email,
-        subject: title,
-        html: body,
-      });
-      console.log("Email sent via Brevo SMTP to:", email);
-      return info;
-    } catch (brevoError) {
-      console.warn("Brevo SMTP failed, trying fallback:", brevoError.message);
-      errors.push(`Brevo SMTP: ${brevoError.message}`);
-    }
-  }
-
-  // Priority 4: Default Nodemailer (Gmail with App Password)
-  if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-    try {
-      const cleanPass = process.env.EMAIL_PASS.replace(/\s+/g, "");
-      const transporter = nodemailer.createTransport({
-        host: "smtp.gmail.com",
-        port: 465,
-        secure: true,
-        family: 4,
-        connectionTimeout: 10000,
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: cleanPass,
-        },
-      });
-
-      const info = await transporter.sendMail({
-        from: `"MediCore Hospital Management System" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: title,
-        html: body,
-      });
-
-      console.log("Email sent via Gmail SMTP to:", email);
-      return info;
-    } catch (gmailError) {
-      console.warn("Gmail SMTP failed:", gmailError.message);
-      errors.push(`Gmail: ${gmailError.message}`);
-    }
-  }
-
-  throw new Error(`Failed to send email. Providers attempted: ${errors.join(" | ")}`);
 };
 
 module.exports = mailSender;
-
