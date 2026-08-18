@@ -133,19 +133,7 @@ const sendViaBrevoAPI = (toEmail, title, body) => {
 const mailSender = async (email, title, body) => {
   const errors = [];
 
-  // Priority 1: Brevo HTTP API (Port 443 - works on Render & Local)
-  if (process.env.SMTP_KEY) {
-    try {
-      const result = await sendViaBrevoAPI(email, title, body);
-      console.log("Email sent via Brevo HTTP API to:", email);
-      return result;
-    } catch (brevoApiError) {
-      console.warn("Brevo API failed, trying fallback:", brevoApiError.message);
-      errors.push(`Brevo API: ${brevoApiError.message}`);
-    }
-  }
-
-  // Priority 2: SendGrid HTTP API
+  // Priority 1: SendGrid HTTP API
   if (process.env.SENDGRID_API_KEY) {
     try {
       const result = await sendViaSendGridAPI(email, title, body);
@@ -154,6 +142,18 @@ const mailSender = async (email, title, body) => {
     } catch (sgError) {
       console.warn("SendGrid API failed, trying fallback:", sgError.message);
       errors.push(`SendGrid: ${sgError.message}`);
+    }
+  }
+
+  // Priority 2: Brevo HTTP API (Port 443 - works on Render & Local)
+  if (process.env.SMTP_KEY) {
+    try {
+      const result = await sendViaBrevoAPI(email, title, body);
+      console.log("Email sent via Brevo HTTP API to:", email);
+      return result;
+    } catch (brevoApiError) {
+      console.warn("Brevo API failed, trying fallback:", brevoApiError.message);
+      errors.push(`Brevo API: ${brevoApiError.message}`);
     }
   }
 
