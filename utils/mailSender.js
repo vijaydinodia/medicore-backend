@@ -73,10 +73,79 @@ const sendViaSendGridAPI = (toEmail, title, body) => {
   });
 };
 
+const sendViaBrevoAPI = (toEmail, title, body) => {
+  return new Promise((resolve, reject) => {
+    const apiKey = process.env.SMTP_KEY;
+    const { name: fromName, email: fromEmail } = parseFromEmail(
+      process.env.SENDGRID_FROM_EMAIL || process.env.EMAIL_USER
+    );
+
+    const postData = JSON.stringify({
+      sender: {
+        name: fromName,
+        email: fromEmail,
+      },
+      to: [
+        {
+          email: toEmail,
+        },
+      ],
+      subject: title,
+      htmlContent: body,
+    });
+
+    const options = {
+      hostname: "api.brevo.com",
+      port: 443,
+      path: "/v3/smtp/email",
+      method: "POST",
+      headers: {
+        "api-key": apiKey,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "Content-Length": Buffer.byteLength(postData),
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let responseData = "";
+      res.on("data", (chunk) => {
+        responseData += chunk;
+      });
+      res.on("end", () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve({ success: true, messageId: responseData });
+        } else {
+          reject(new Error(`Brevo API failed (${res.statusCode}): ${responseData}`));
+        }
+      });
+    });
+
+    req.on("error", (err) => {
+      reject(err);
+    });
+
+    req.write(postData);
+    req.end();
+  });
+};
+
 const mailSender = async (email, title, body) => {
   const errors = [];
 
-  // Priority 1: SendGrid HTTP API
+  // Priority 1: Brevo HTTP API (Port 443 - works on Render & Local)
+  if (process.env.SMTP_KEY) {
+    try {
+      const result = await sendViaBrevoAPI(email, title, body);
+      console.log("Email sent via Brevo HTTP API to:", email);
+      return result;
+    } catch (brevoApiError) {
+      console.warn("Brevo API failed, trying fallback:", brevoApiError.message);
+      errors.push(`Brevo API: ${brevoApiError.message}`);
+    }
+  }
+
+  // Priority 2: SendGrid HTTP API
   if (process.env.SENDGRID_API_KEY) {
     try {
       const result = await sendViaSendGridAPI(email, title, body);
@@ -88,7 +157,7 @@ const mailSender = async (email, title, body) => {
     }
   }
 
-  // Priority 2: Brevo / Custom SMTP via Nodemailer
+  // Priority 3: Brevo / Custom SMTP via Nodemailer
   if (process.env.SMTP_USER && process.env.SMTP_KEY) {
     try {
       const transporter = nodemailer.createTransport({
@@ -112,16 +181,20 @@ const mailSender = async (email, title, body) => {
       return info;
     } catch (brevoError) {
       console.warn("Brevo SMTP failed, trying fallback:", brevoError.message);
-      errors.push(`Brevo: ${brevoError.message}`);
+      errors.push(`Brevo SMTP: ${brevoError.message}`);
     }
   }
 
-  // Priority 3: Default Nodemailer (Gmail with App Password)
+  // Priority 4: Default Nodemailer (Gmail with App Password)
   if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     try {
       const cleanPass = process.env.EMAIL_PASS.replace(/\s+/g, "");
       const transporter = nodemailer.createTransport({
-        service: "gmail",
+        host: "smtp.gmail.com",
+        port: 465,
+        secure: true,
+        family: 4,
+        connectionTimeout: 10000,
         auth: {
           user: process.env.EMAIL_USER,
           pass: cleanPass,
