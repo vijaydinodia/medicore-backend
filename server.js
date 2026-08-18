@@ -11,6 +11,7 @@ const {
   apiLimiter,
 } = require("./middleware/rateLimiter");
 
+
 const app = express();
 
 app.set("trust proxy", 1);
@@ -39,7 +40,11 @@ const allowedOrigins = process.env.FRONTEND_URLS
 const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, Postman)
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (
+      !origin ||
+      allowedOrigins.includes(origin) ||
+      /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+    ) {
       callback(null, true);
     } else {
       callback(new Error("Not allowed by CORS"));
