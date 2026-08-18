@@ -13,29 +13,30 @@ const {
 
 const app = express();
 
-app.set("trust proxy", 1)
+app.set("trust proxy", 1);
 
-// Security
-applySecurity(app);
-
-// Logger
-app.use(morgan("short"));
-
-// Body Parser
-app.use(express.json({ limit: "10kb" }));
-app.use(express.urlencoded({ extended: true, limit: "10kb" }));
-
-// CORS - Allow All Origins
+// 1. CORS - Placed at top of middleware chain so preflight and errors receive CORS headers
 const corsOptions = {
-  origin: true,
+  origin: (origin, callback) => callback(null, true),
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+  optionsSuccessStatus: 200,
 };
 
 app.use(cors(corsOptions));
 
-// Rate Limiter
+// 2. Security Headers & Protection
+applySecurity(app);
+
+// 3. Logger
+app.use(morgan("short"));
+
+// 4. Body Parser
+app.use(express.json({ limit: "10kb" }));
+app.use(express.urlencoded({ extended: true, limit: "10kb" }));
+
+// 5. Rate Limiter
 app.use(globalLimiter);
 
 // MongoDB Connection
